@@ -1,11 +1,11 @@
 ---
 name: sync-bench
-description: Add new LLM result files to the 3D scene bench collection and keep it in sync with disk. Use whenever the user drops new model HTML into a scene variant folder (aurora-torus/ or aurora-torus-with-control/), says there are new or missing results, asks to add a model to the grid, refresh or regenerate thumbnails, update the model list or manifest, or wonders why a result file is not showing up in index.html. Also use after renaming or deleting result files. If the user mentions the bench, the collection, the model grid, or thumbnails being out of date, run this skill rather than editing manifest.js by hand.
+description: Add new LLM result files to the 3D scene bench collection and keep it in sync with disk. Use whenever the user drops new model HTML into a collection folder (collections/<slug>/), says there are new or missing results, asks to add a model to the grid, refresh or regenerate thumbnails, update the model list or manifest, or wonders why a result file is not showing up in index.html. Also use after renaming or deleting result files. If the user mentions the bench, the collection, the model grid, or thumbnails being out of date, run this skill rather than editing manifest.js by hand.
 ---
 
 # Sync the 3D scene bench collection
 
-The bench shows one card per result file in each scene variant folder. The pages
+The bench shows one card per result file in each collection folder. The pages
 read a generated `manifest.js` (model slugs + byte sizes) and a `thumbs/` folder
 of PNG previews. When result files change on disk, those two artifacts go
 stale. This skill reconciles them in one command instead of hand-editing
@@ -15,23 +15,23 @@ The result folders are the source of truth. The sync never edits or deletes the
 model HTML files themselves; it only regenerates `manifest.js` and captures or
 prunes thumbnails.
 
-## Scene variants
+## Collections
 
-A variant is one prompt sent to many models. `versions.js` lists them. Each
-owns a folder named after its slug, and the slug is also the thumbnail prefix
-and the `?v=` value in the URL.
+A collection is one prompt sent to many models. `collections.js` lists them.
+Each owns a folder under `collections/` named after its slug, and the slug is
+also the thumbnail prefix and the `?v=` value in the URL.
 
 | slug | label | folder |
 |---|---|---|
-| `aurora-torus` | Aurora torus | `aurora-torus/` |
-| `aurora-torus-with-control` | Aurora torus with control | `aurora-torus-with-control/` |
+| `aurora-torus` | Aurora torus | `collections/aurora-torus/` |
+| `aurora-torus-with-control` | Aurora torus with control | `collections/aurora-torus-with-control/` |
 
-To add a variant, add an entry to `versions.js`, create the folder, then run
-the sync.
+To add a collection, add an entry to `collections.js`, create the folder, add
+the prompt string to `prompts.js`, then run the sync.
 
 ## When to use
 
-- New `.html` results were added to a variant folder and should appear in the grid.
+- New `.html` results were added to a collection folder and should appear in the grid.
 - A result was renamed or removed and the grid or a thumbnail is now wrong.
 - Thumbnails are missing, blank, or out of date after a scene changed.
 - The user asks to "add the missing models", "refresh the collection", or
@@ -45,7 +45,7 @@ From the project root (`llm-3d-tests/`), run:
 node tools/sync-collection.mjs
 ```
 
-That scans every variant folder, rewrites `manifest.js`, and captures a thumbnail
+That scans every collection folder, rewrites `manifest.js`, and captures a thumbnail
 for every result that lacks one. It prints what was added, resized, or removed,
 and which thumbnails it captured. Read that summary and report it to the user.
 
@@ -65,10 +65,11 @@ only if the user confirms removed results should lose their previews.
 
 After syncing, open `index.html` (double-click, or `python3 -m http.server` and
 visit it). Confirm the model count next to "Results" matches the number of files
-in the selected variant, the new cards show real thumbnails, and clicking a new
-card opens `view.html` with that scene rendering. The viewer's model select should
-also list the new model. If a card shows the "No preview" tile, its capture
-failed; re-run with `--force` or check the failure line in the sync output.
+in the selected collection, the new cards show real thumbnails, and clicking a
+new card opens `view.html` with that scene rendering. The viewer's model select
+should also list the new model. If a card shows the "No preview" tile, its
+capture failed; re-run with `--force` or check the failure line in the sync
+output.
 
 ## How it fits together
 
@@ -79,9 +80,9 @@ failed; re-run with `--force` or check the failure line in the sync output.
   routine adds so existing thumbnails are not needlessly regenerated.
 - `manifest.js` is generated. Do not edit it by hand; change the files on disk and
   re-run the sync. `app.js` reads `window.MANIFEST` from it.
-- `versions.js` lists the scene variants. `app.js` reads `window.VERSIONS` from
-  it, and the capture tools read the same list.
-- `prompts.js` is separate and holds the prompt text, one string per variant
+- `collections.js` lists the collections. `app.js` reads `window.COLLECTIONS`
+  from it, and the capture tools read the same list.
+- `prompts.js` is separate and holds the prompt text, one string per collection
   slug. The sync does not touch it.
 
 ## Dependencies and troubleshooting

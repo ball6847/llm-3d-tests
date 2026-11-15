@@ -1,8 +1,8 @@
 /* =========================================================================
    Sync the bench collection with the result files on disk.
 
-   Each scene variant in versions.js owns a folder named after its slug.
-   This script:
+   Each collection in collections.js owns a folder under collections/ named
+   after its slug. This script:
      1. scans those folders for *.html results
      2. regenerates manifest.js (the model list + byte sizes the pages read)
      3. captures thumbnails for any result that lacks one
@@ -22,7 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { ROOT, VERSIONS, launchBrowser, captureScene, scanScenes } from './capture.mjs';
+import { ROOT, COLLECTIONS, launchBrowser, captureScene, scanScenes } from './capture.mjs';
 
 const require = createRequire(import.meta.url);
 const args = new Set(process.argv.slice(2));
@@ -34,7 +34,7 @@ const W = Number(process.env.THUMB_W || 960);
 const H = Number(process.env.THUMB_H || 540);
 const CONCURRENCY = 3;
 
-const slugs = VERSIONS.map((v) => v.slug);
+const slugs = COLLECTIONS.map((c) => c.slug);
 
 /* ---- read the current manifest, if any ---- */
 let existing = {};

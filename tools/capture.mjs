@@ -15,9 +15,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-/* The scene variants live in versions.js so the pages and the tools read the
-   same list. Each variant owns a folder named after its slug. */
-export const VERSIONS = require(path.join(ROOT, 'versions.js'));
+/* The collections live in collections.js so the pages and the tools read the
+   same list. Each collection owns a folder under collections/ named after
+   its slug. */
+export const COLLECTIONS = require(path.join(ROOT, 'collections.js'));
 
 export function resolvePlaywright() {
   try {
@@ -72,17 +73,17 @@ export async function captureScene(browser, job, outDir, opts = {}) {
 }
 
 /* List every result file on disk as { v, slug, file, bytes }. The v is the
-   variant slug, which is also the folder name and the thumbnail prefix. */
+   collection slug, which is also the thumbnail prefix. */
 export function scanScenes(fs) {
   const jobs = [];
-  for (const version of VERSIONS) {
-    const dir = path.join(ROOT, version.slug);
+  for (const collection of COLLECTIONS) {
+    const dir = path.join(ROOT, 'collections', collection.slug);
     let names = [];
     try { names = fs.readdirSync(dir); } catch { continue; }
     for (const f of names.sort()) {
       if (!f.endsWith('.html')) continue;
       const file = path.join(dir, f);
-      jobs.push({ v: version.slug, slug: f.slice(0, -5), file, bytes: fs.statSync(file).size });
+      jobs.push({ v: collection.slug, slug: f.slice(0, -5), file, bytes: fs.statSync(file).size });
     }
   }
   return jobs;

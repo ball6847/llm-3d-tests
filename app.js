@@ -3,47 +3,47 @@
    Classic script, no modules, so everything works over file:// too.
 
    URL state:
-   - http(s): query string (?v=<variant>&model=slug) via pushState, Back works.
+   - http(s): query string (?v=<collection>&model=slug) via pushState, Back works.
    - file://: Chrome forbids pushState with a changed URL on null origins,
-     so state moves to the hash (#v=<variant>&model=slug) instead. Query params
+     so state moves to the hash (#v=<collection>&model=slug) instead. Query params
      are still read on load, so shared links work in both directions.
 
-   A scene variant is identified by its slug. The slug is also the folder
-   name on disk and the thumbnail prefix. versions.js holds the list.
+   A collection is identified by its slug. The slug is also the folder name
+   under collections/ and the thumbnail prefix. collections.js holds the list.
    ========================================================================= */
 
 (function () {
   'use strict';
 
-  var VERSIONS = window.VERSIONS || [];
+  var COLLECTIONS = window.COLLECTIONS || [];
   var MANIFEST = window.MANIFEST || {};
 
   var KB = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   function fmtBytes(b) { return KB.format(b / 1024) + ' KB'; }
 
-  function versionBySlug(slug) {
-    for (var i = 0; i < VERSIONS.length; i++) if (VERSIONS[i].slug === slug) return VERSIONS[i];
+  function collectionBySlug(slug) {
+    for (var i = 0; i < COLLECTIONS.length; i++) if (COLLECTIONS[i].slug === slug) return COLLECTIONS[i];
     return null;
   }
 
   /* Accept the old numbered keys so links made before the rename still work. */
   function resolveSlug(value) {
     if (!value) return null;
-    if (versionBySlug(value)) return value;
-    for (var i = 0; i < VERSIONS.length; i++) {
-      if (String(VERSIONS[i].legacy) === String(value)) return VERSIONS[i].slug;
+    if (collectionBySlug(value)) return value;
+    for (var i = 0; i < COLLECTIONS.length; i++) {
+      if (String(COLLECTIONS[i].legacy) === String(value)) return COLLECTIONS[i].slug;
     }
     return null;
   }
 
-  function versionIndex(slug) {
-    for (var i = 0; i < VERSIONS.length; i++) if (VERSIONS[i].slug === slug) return i;
+  function collectionIndex(slug) {
+    for (var i = 0; i < COLLECTIONS.length; i++) if (COLLECTIONS[i].slug === slug) return i;
     return 0;
   }
 
   function defaultSlug() {
-    return VERSIONS.length ? VERSIONS[0].slug : '';
+    return COLLECTIONS.length ? COLLECTIONS[0].slug : '';
   }
 
   function modelsOf(slug) { return MANIFEST[slug] || []; }
@@ -54,16 +54,16 @@
     return null;
   }
 
-  /* The other variant, when the same model was run there too. */
+  /* The other collection, when the same model was run there too. */
   function otherVersion(slug, model) {
-    for (var i = 0; i < VERSIONS.length; i++) {
-      if (VERSIONS[i].slug === slug) continue;
-      if (findModel(VERSIONS[i].slug, model)) return VERSIONS[i].slug;
+    for (var i = 0; i < COLLECTIONS.length; i++) {
+      if (COLLECTIONS[i].slug === slug) continue;
+      if (findModel(COLLECTIONS[i].slug, model)) return COLLECTIONS[i].slug;
     }
     return null;
   }
 
-  function scenePath(slug, model) { return slug + '/' + model + '.html'; }
+  function scenePath(slug, model) { return 'collections/' + slug + '/' + model + '.html'; }
   function viewerHref(slug, model) {
     return 'view.html?v=' + encodeURIComponent(slug) + '&model=' + encodeURIComponent(model);
   }
@@ -104,7 +104,7 @@
   /* ============================================================ index page */
 
   function initIndex() {
-    var versionSelect = document.getElementById('version-select');
+    var collectionSelect = document.getElementById('collection-select');
     var heading = document.getElementById('prompt-heading');
     var fileLabel = document.getElementById('prompt-file');
     var promptText = document.getElementById('prompt-text');
@@ -116,13 +116,13 @@
     var lastKey = null;
     var copyTimer = null;
 
-    if (versionSelect) {
-      versionSelect.innerHTML = '';
-      VERSIONS.forEach(function (v) {
+    if (collectionSelect) {
+      collectionSelect.innerHTML = '';
+      COLLECTIONS.forEach(function (c) {
         var o = document.createElement('option');
-        o.value = v.slug;
-        o.textContent = v.label;
-        versionSelect.appendChild(o);
+        o.value = c.slug;
+        o.textContent = c.label;
+        collectionSelect.appendChild(o);
       });
     }
 
@@ -132,12 +132,12 @@
       if (slug === lastKey) return;
       lastKey = slug;
 
-      var version = versionBySlug(slug);
-      var label = version ? version.label : slug;
+      var collection = collectionBySlug(slug);
+      var label = collection ? collection.label : slug;
 
-      if (versionSelect) {
-        versionSelect.value = slug;
-        versionSelect.setAttribute('data-index', String(versionIndex(slug)));
+      if (collectionSelect) {
+        collectionSelect.value = slug;
+        collectionSelect.setAttribute('data-index', String(collectionIndex(slug)));
       }
       heading.textContent = label;
       fileLabel.textContent = 'prompts.js · ' + slug;
@@ -145,7 +145,7 @@
 
       var prompts = window.PROMPTS || {};
       promptText.textContent = prompts[slug] ||
-        '[prompts.js missing] Add prompts.js next to index.html with a string per scene variant.';
+        '[prompts.js missing] Add prompts.js next to index.html with a string per collection.';
 
       buildGrid(slug);
       var n = modelsOf(slug).length;
@@ -155,15 +155,15 @@
     function buildGrid(slug) {
       var models = modelsOf(slug);
       if (!models.length) {
-        grid.innerHTML = '<li class="grid-empty">No results for this scene variant yet. Drop the model HTML files into ' +
-          slug + '/ and run the sync skill.</li>';
+        grid.innerHTML = '<li class="grid-empty">No results for this collection yet. Drop the model HTML files into ' +
+          'collections/' + slug + '/ and run the sync skill.</li>';
         return;
       }
       var html = models.map(function (m, i) {
         var other = otherVersion(slug, m.slug);
-        var otherLabel = other ? (versionBySlug(other) || {}).short : '';
+        var otherLabel = other ? (collectionBySlug(other) || {}).short : '';
         var alt = other
-          ? '<a class="card-alt" data-index="' + versionIndex(other) + '" href="' + viewerHref(other, m.slug) + '" ' +
+          ? '<a class="card-alt" data-index="' + collectionIndex(other) + '" href="' + viewerHref(other, m.slug) + '" ' +
             'aria-label="Open the ' + otherLabel + ' render of ' + m.slug + '" title="' + otherLabel + ' render">' +
             otherLabel + ' ' + ARROW_NE + '</a>'
           : '';
@@ -191,9 +191,9 @@
       });
     }
 
-    if (versionSelect) {
-      versionSelect.addEventListener('change', function () {
-        writeState(new URLSearchParams({ v: versionSelect.value }), false);
+    if (collectionSelect) {
+      collectionSelect.addEventListener('change', function () {
+        writeState(new URLSearchParams({ v: collectionSelect.value }), false);
         apply();
       });
     }
@@ -245,8 +245,8 @@
 
   function initViewer() {
     var backLink = document.getElementById('back-link');
-    var versionChip = document.getElementById('viewer-version');
-    var variantSelect = document.getElementById('variant-select');
+    var collectionChip = document.getElementById('viewer-collection');
+    var collectionSelect = document.getElementById('collection-select');
     var modelName = document.getElementById('viewer-model');
     var select = document.getElementById('model-select');
     var rawLink = document.getElementById('raw-link');
@@ -266,13 +266,13 @@
     var loadTimer = null;
     var isHttp = location.protocol === 'http:' || location.protocol === 'https:';
 
-    if (variantSelect) {
-      variantSelect.innerHTML = '';
-      VERSIONS.forEach(function (v) {
+    if (collectionSelect) {
+      collectionSelect.innerHTML = '';
+      COLLECTIONS.forEach(function (c) {
         var o = document.createElement('option');
-        o.value = v.slug;
-        o.textContent = v.label;
-        variantSelect.appendChild(o);
+        o.value = c.slug;
+        o.textContent = c.label;
+        collectionSelect.appendChild(o);
       });
     }
 
@@ -384,11 +384,11 @@
       });
     }
 
-    function variantChips() {
-      return VERSIONS.map(function (v) {
+    function collectionChips() {
+      return COLLECTIONS.map(function (c) {
         return {
-          href: 'index.html?v=' + encodeURIComponent(v.slug),
-          label: v.label + ' · ' + modelsOf(v.slug).length + ' models'
+          href: 'index.html?v=' + encodeURIComponent(c.slug),
+          label: c.label + ' · ' + modelsOf(c.slug).length + ' models'
         };
       });
     }
@@ -404,22 +404,22 @@
       currentSlug = slug || defaultSlug();
 
       backLink.href = 'index.html?v=' + encodeURIComponent(currentSlug);
-      var version = versionBySlug(currentSlug);
-      versionChip.textContent = version ? version.short : currentSlug;
-      versionChip.setAttribute('data-index', String(versionIndex(currentSlug)));
-      versionChip.title = version ? version.label : currentSlug;
-      if (variantSelect) {
-        variantSelect.value = currentSlug;
-        variantSelect.setAttribute('data-index', String(versionIndex(currentSlug)));
+      var collection = collectionBySlug(currentSlug);
+      collectionChip.textContent = collection ? collection.short : currentSlug;
+      collectionChip.setAttribute('data-index', String(collectionIndex(currentSlug)));
+      collectionChip.title = collection ? collection.label : currentSlug;
+      if (collectionSelect) {
+        collectionSelect.value = currentSlug;
+        collectionSelect.setAttribute('data-index', String(collectionIndex(currentSlug)));
       }
       fillSelect(currentSlug, model);
 
       if (badVersion) {
         modelName.textContent = '';
         showError(
-          'Unknown scene variant',
-          ['There is no scene variant ', codeNode(state.v), '. Pick one to browse its results.'],
-          variantChips(),
+          'Unknown collection',
+          ['There is no collection ', codeNode(state.v), '. Pick one to browse its results.'],
+          collectionChips(),
           currentSlug
         );
         return;
@@ -441,7 +441,7 @@
         modelName.title = model;
         showError(
           'Model not found',
-          ['No result named ', codeNode(model), ' exists for ' + currentSlug + '. It may belong to the other scene variant, or the name is misspelled.'],
+          ['No result named ', codeNode(model), ' exists for ' + currentSlug + '. It may belong to the other collection, or the name is misspelled.'],
           modelChips(currentSlug),
           currentSlug
         );
@@ -477,13 +477,13 @@
       }
     });
 
-    if (variantSelect) {
-      variantSelect.addEventListener('change', function () {
-        var next = variantSelect.value;
+    if (collectionSelect) {
+      collectionSelect.addEventListener('change', function () {
+        var next = collectionSelect.value;
         if (!next || next === currentSlug) return;
         var model = select.value || (readState().model || '');
-        /* Keep the same model when the other variant ran it too, otherwise
-           send the visitor to that variant's grid. */
+        /* Keep the same model when the other collection ran it too, otherwise
+           send the visitor to that collection's grid. */
         location.assign(findModel(next, model)
           ? viewerHref(next, model)
           : 'index.html?v=' + encodeURIComponent(next));

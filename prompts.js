@@ -1,9 +1,10 @@
 /* =========================================================================
    Prompt text for the 3D scene bench.
 
-   PROMPT_AURORA_TORUS was sent to every model in aurora-torus/.
+   PROMPT_AURORA_TORUS was sent to every model in
+   collections/aurora-torus/.
    PROMPT_AURORA_TORUS_WITH_CONTROL was sent to every model in
-   aurora-torus-with-control/.
+   collections/aurora-torus-with-control/.
 
    The strings are plain JSON-quoted literals so that backticks and quotes
    inside a prompt need no escaping by hand. Edit the text between the
