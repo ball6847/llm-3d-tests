@@ -10,7 +10,13 @@ Two pages:
 - `view.html` renders one model's real HTML full-viewport in an iframe, with a
   sticky header to go back, switch models, or open the raw file.
 
-## Open it
+## Live site
+
+<https://ball6847.github.io/llm-3d-tests/>
+
+Deployed from the `main` branch via GitHub Pages. Every push rebuilds it.
+
+## Open it locally
 
 No build step, no dependencies. Either works:
 

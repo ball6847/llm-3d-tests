@@ -35,6 +35,10 @@ for prompt v2. The preview site shows the prompt and every raw render.
 No build step. Serve the folder with `python3 -m http.server` and open
 `index.html`.
 
+The live site is <https://ball6847.github.io/llm-3d-tests/>, served by GitHub
+Pages from the `main` branch. Push to `main` and the site rebuilds. The repo is
+`ball6847/llm-3d-tests`.
+
 - Over http, the viewer swaps models without reloading the page and Back works.
 - Over `file://`, Chrome treats each local file as a separate opaque origin,
   so a model switch becomes a normal navigation. Back and deep links still work.
