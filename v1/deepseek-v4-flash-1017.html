@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Aurora Knot — WebGL Study</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='38' fill='none' stroke='%238ff0ff' stroke-width='7'/%3E%3Ccircle cx='50' cy='50' r='15' fill='%23b79bff'/%3E%3C/svg%3E" />
+<style>
+  :root {
+    --bg: #02030a;
+    --ink: #eef4ff;
+    --muted: rgba(205, 222, 255, 0.6);
+    --faint: rgba(190, 210, 255, 0.3);
+    --line: rgba(170, 205, 255, 0.18);
+    --cyan: #8ff0ff;
+    --violet: #b79bff;
+    --rose: #ffb4d6;
+    --pad: clamp(22px, 4.5vw, 60px);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  #scene {
+    position: fixed;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    outline: none;
+  }
+
+  /* ---------- HUD ---------- */
+  .hud {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: var(--pad);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 1.2s ease 0.15s, transform 1.2s cubic-bezier(0.22, 1, 0.36, 1) 0.15s;
+  }
+  body.is-ready .hud { opacity: 1; transform: none; }
+
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; }
+
+  .kicker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .signal {
+    width: 5px;
+    height: 5px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--cyan);
+    box-shadow: 0 0 12px 2px rgba(143, 240, 255, 0.7);
+    animation: signal 3.6s ease-in-out infinite;
+  }
+  @keyframes signal {
+    0%, 100% { opacity: 0.5; transform: scale(0.85); }
+    50%      { opacity: 1;   transform: scale(1.15); }
+  }
+
+  h1 {
+    margin: 16px 0 0;
+    font-size: clamp(2.4rem, 5.2vw, 5.1rem);
+    font-weight: 200;
+    letter-spacing: -0.045em;
+    line-height: 0.94;
+  }
+  h1 em {
+    font-family: "Iowan Old Style", "Palatino Linotype", Georgia, "Times New Roman", serif;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    background: linear-gradient(104deg, #a8f2ff 0%, #b7a3ff 52%, #ffb1d4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 26px rgba(126, 200, 255, 0.22));
+  }
+
+  .tagline {
+    max-width: 33ch;
+    margin: 18px 0 0;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--muted);
+    letter-spacing: 0.01em;
+  }
+
+  .index {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+    letter-spacing: 0.24em;
+    color: var(--faint);
+    padding-top: 4px;
+    white-space: nowrap;
+  }
+  .index span { opacity: 0.45; }
+
+  .bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; }
+
+  .hint {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.26em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .cursor-icon {
+    position: relative;
+    width: 17px;
+    height: 25px;
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+  }
+  .cursor-icon::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 50%;
+    width: 2px;
+    height: 5px;
+    margin-left: -1px;
+    border-radius: 2px;
+    background: var(--cyan);
+    box-shadow: 0 0 8px rgba(143, 240, 255, 0.8);
+    animation: scroll 2.4s ease-in-out infinite;
+  }
+  @keyframes scroll {
+    0%, 100% { opacity: 0; transform: translateY(-1px); }
+    35%      { opacity: 1; }
+    70%      { opacity: 0; transform: translateY(6px); }
+  }
+
+  .spec {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--faint);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .touch-only { display: none; }
+  @media (hover: none) {
+    .desktop-only { display: none; }
+    .touch-only { display: inline; }
+  }
+
+  @media (max-width: 700px) {
+    .tagline, .spec { display: none; }
+    .index { display: none; }
+    h1 { font-size: clamp(2.1rem, 10vw, 3.2rem); }
+    .hint { letter-spacing: 0.2em; font-size: 9px; }
+  }
+
+  /* ---------- Loading / fallback ---------- */
+  #loader {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: grid;
+    place-items: center;
+    background:
+      radial-gradient(130% 90% at 50% 42%, #090b1b 0%, #04050e 48%, #010105 100%);
+    transition: opacity 0.7s ease, visibility 0.7s;
+  }
+  body.is-ready #loader { opacity: 0; visibility: hidden; pointer-events: none; }
+
+  .loader-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .ring {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(160, 200, 255, 0.12);
+    border-top-color: rgba(143, 240, 255, 0.9);
+    border-right-color: rgba(183, 155, 255, 0.55);
+    animation: spin 1.05s linear infinite;
+    filter: drop-shadow(0 0 12px rgba(120, 220, 255, 0.25));
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-label {
+    margin: 18px 0 0;
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: rgba(235, 243, 255, 0.82);
+    padding-left: 0.42em;
+  }
+  .loading-note {
+    margin: 7px 0 0;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(170, 195, 235, 0.32);
+  }
+  #loader.is-error .ring { display: none; }
+  #loader.is-error .loading-label { color: #ffc7d8; }
+  #loader.is-error .loading-note {
+    max-width: 34ch;
+    line-height: 1.7;
+    text-transform: none;
+    letter-spacing: 0.04em;
+    font-size: 11px;
+    color: rgba(210, 220, 240, 0.55);
+  }
+  #loader .error-mark {
+    display: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--rose);
+    box-shadow: 0 0 16px rgba(255, 150, 190, 0.8);
+    margin-bottom: 2px;
+  }
+  #loader.is-error .error-mark { display: block; }
+</style>
+</head>
+<body>
+  <canvas id="scene" aria-hidden="true"></canvas>
+
+  <div class="hud">
+    <header class="top">
+      <div class="brand">
+        <div class="kicker"><span class="signal"></span> WebGL &middot; Generative study</div>
+        <h1>Aurora <em>Knot</em></h1>
+        <p class="tagline">A breathing torus knot, wrapped in an iridescent shader and a slowly turning nebula.</p>
+      </div>
+      <div class="index">01 <span>/ 01</span></div>
+    </header>
+
+    <footer class="bottom">
+      <div class="hint">
+        <span class="cursor-icon" aria-hidden="true"></span>
+        <span class="desktop-only">Move cursor &middot; orbit view</span>
+        <span class="touch-only">Drag &middot; orbit view</span>
+      </div>
+      <div class="spec">Three.js &middot; GLSL &middot; Unreal Bloom</div>
+    </footer>
+  </div>
+
+  <div id="loader" role="status" aria-live="polite">
+    <div class="loader-inner">
+      <span class="error-mark" aria-hidden="true"></span>
+      <div class="ring" aria-hidden="true"></div>
+      <p class="loading-label">Loading&hellip;</p>
+      <p class="loading-note">Compiling shaders</p>
+    </div>
+  </div>
+
+  <script>
+    // Failsafe for slow / blocked CDN or a module crash: never leave a dead spinner.
+    window.__sceneReady = false;
+    window.__loadError = function (message) {
+      if (window.__sceneReady) return;
+      var loader = document.getElementById('loader');
+      if (!loader || loader.classList.contains('is-error')) return;
+      loader.classList.add('is-error');
+      loader.setAttribute('aria-hidden', 'false');
+      loader.querySelector('.loading-label').textContent = 'Unable to load';
+      loader.querySelector('.loading-note').textContent = message;
+    };
+    window.addEventListener('error', function (event) {
+      if (window.__sceneReady) return;
+      // Only takeover on hard script/WebGL failures, not on every stray error.
+      if (event.target && event.target.tagName === 'SCRIPT') {
+        window.__loadError('The 3D library could not be fetched. Check your connection and reload.');
+      }
+    }, true);
+    setTimeout(function () {
+      window.__loadError('Still waiting for the renderer. Your network may be blocking the Three.js CDN.');
+    }, 15000);
+  </script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    const canvas = document.getElementById('scene');
+    const loader = document.getElementById('loader');
+
+    // ------------------------------------------------------------------
+    // Shaders
+    // ------------------------------------------------------------------
+
+    // Ashima Arts simplex noise (MIT) — used once per vertex to displace the
+    // knot along its normals, giving the surface a slow organic "breath".
+    const SIMPLEX_3D = /* glsl */`
+      vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+      vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+      float snoise(vec3 v) {
+        const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+        const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+        vec3 i  = floor(v + dot(v, C.yyy));
+        vec3 x0 = v - i + dot(i, C.xxx);
+
+        vec3 g = step(x0.yzx, x0.xyz);
+        vec3 l = 1.0 - g;
+        vec3 i1 = min(g.xyz, l.zxy);
+        vec3 i2 = max(g.xyz, l.zxy);
+
+        vec3 x1 = x0 - i1 + C.xxx;
+        vec3 x2 = x0 - i2 + C.yyy;
+        vec3 x3 = x0 - D.yyy;
+
+        i = mod289(i);
+        vec4 p = permute(permute(permute(
+          i.z + vec4(0.0, i1.z, i2.z, 1.0)) +
+          i.y + vec4(0.0, i1.y, i2.y, 1.0)) +
+          i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+        float n_ = 0.142857142857;
+        vec3 ns = n_ * D.wyz - D.xzx;
+
+        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+        vec4 x_ = floor(j * ns.z);
+        vec4 y_ = floor(j - 7.0 * x_);
+
+        vec4 x = x_ * ns.x + ns.yyyy;
+        vec4 y = y_ * ns.x + ns.yyyy;
+        vec4 h = 1.0 - abs(x) - abs(y);
+
+        vec4 b0 = vec4(x.xy, y.xy);
+        vec4 b1 = vec4(x.zw, y.zw);
+
+        vec4 s0 = floor(b0) * 2.0 + 1.0;
+        vec4 s1 = floor(b1) * 2.0 + 1.0;
+        vec4 sh = -step(h, vec4(0.0));
+
+        vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+        vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+
+        vec3 p0 = vec3(a0.xy, h.x);
+        vec3 p1 = vec3(a0.zw, h.y);
+        vec3 p2 = vec3(a1.xy, h.z);
+        vec3 p3 = vec3(a1.zw, h.w);
+
+        vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+        p0 *= norm.x;
+        p1 *= norm.y;
+        p2 *= norm.z;
+        p3 *= norm.w;
+
+        vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1), dot(x2, x2), dot(x3, x3)), 0.0);
+        m = m * m;
+        return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
+      }
+    `;
+
+    const heroVertexShader = /* glsl */`
+      uniform float uTime;
+
+      varying vec3 vNormalV;
+      varying vec3 vPosV;
+      varying vec2 vUv;
+      varying float vNoise;
+      varying float vPulse;
+
+      ${SIMPLEX_3D}
+
+      void main() {
+        vUv = uv;
+
+        // Two noise octaves + a travelling sine pulse. The amplitude is small
+        // relative to the tube radius so the silhouette stays a clean knot.
+        float t = uTime * 0.35;
+        float n1 = snoise(position * 1.7 + vec3(0.0, t, t * 0.6));
+        float n2 = snoise(position * 3.4 - vec3(t * 0.5, 0.0, t * 0.25));
+        float pulse = sin(uTime * 1.35 + position.y * 1.7 + position.x * 1.1);
+        float displacement = n1 * 0.030 + n2 * 0.012 + pulse * 0.016;
+
+        vec3 displaced = position + normal * displacement;
+
+        vNoise = n1 * 0.65 + n2 * 0.35;
+        vPulse = 0.5 + 0.5 * pulse;
+
+        vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
+        vPosV = mvPosition.xyz;
+        vNormalV = normalize(normalMatrix * normal);
+
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `;
+
+    const heroFragmentShader = /* glsl */`
+      uniform float uTime;
+
+      varying vec3 vNormalV;
+      varying vec3 vPosV;
+      varying vec2 vUv;
+      varying float vNoise;
+      varying float vPulse;
+
+      // Cyclic jewel-tone palette: ice cyan → electric indigo → magenta →
+      // solar gold. Saturated stops (instead of a pastel cosine ramp) keep
+      // the knot colourful even where the bloom is strongest.
+      vec3 auroraPalette(float t) {
+        t = fract(t) * 4.0;
+        float f = floor(t);
+        float x = smoothstep(0.0, 1.0, fract(t));
+
+        vec3 c0 = vec3(0.10, 0.85, 1.00);
+        vec3 c1 = vec3(0.30, 0.38, 1.00);
+        vec3 c2 = vec3(0.95, 0.28, 0.80);
+        vec3 c3 = vec3(1.00, 0.72, 0.32);
+
+        vec3 a = c3;
+        vec3 b = c0;
+        if (f < 0.5)      { a = c0; b = c1; }
+        else if (f < 1.5) { a = c1; b = c2; }
+        else if (f < 2.5) { a = c2; b = c3; }
+        return mix(a, b, x);
+      }
+
+      void main() {
+        vec3 N = normalize(vNormalV);
+        vec3 V = normalize(-vPosV);
+
+        float ndv = clamp(dot(N, V), 0.0, 1.0);
+        // Fresnel isolates grazing angles: this is what makes the rim bloom.
+        float fresnel = pow(1.0 - ndv, 2.6);
+
+        // Shift the palette with surface noise, path position, view angle and
+        // time — the classic iridescent/aurora colour travel.
+        float shift = 0.04
+                    + vUv.x * 0.56
+                    + vUv.y * 0.12
+                    + vNoise * 0.14
+                    + uTime * 0.04
+                    + fresnel * 0.20;
+        vec3 irid = auroraPalette(shift);
+        // Gamma > 1 increases saturation: low channels drop faster than peaks,
+        // so the knot stays jewel-toned instead of washing to pastel in bloom.
+        irid = pow(irid, vec3(1.35)) * 1.15;
+
+        // Two flowing ribbon frequencies. A high power on the sine keeps the
+        // bright emissive regions as thin filaments instead of blobs, so the
+        // bloom produces streaks that follow the knot's path.
+        float flowA = vUv.x * 64.0 - uTime * 1.9
+                    + sin(vUv.y * 9.0 + uTime * 0.55) * 1.2
+                    + vNoise * 1.4;
+        float ribbonA = pow(0.5 + 0.5 * sin(flowA), 20.0);
+
+        float flowB = vUv.x * 24.0 + uTime * 0.7
+                    + vUv.y * 7.0
+                    + vNoise * 4.0;
+        float ribbonB = pow(0.5 + 0.5 * sin(flowB), 5.0);
+
+        // Soft directional key + wrapped fill, faked because this material is
+        // intentionally custom (no scene lights needed).
+        vec3 keyDir = normalize(vec3(0.45, 0.82, 0.5));
+        vec3 fillDir = normalize(vec3(-0.8, -0.2, 0.45));
+        // One-sided lighting leaves the shadow side genuinely dark. That
+        // contrast is what keeps the knot sculptural rather than flat.
+        float key = clamp(dot(N, keyDir), 0.0, 1.0);
+        float fill = clamp(dot(N, fillDir), 0.0, 1.0);
+
+        // Dark, saturated body. Keep it below the bloom threshold so the
+        // knot reads as a solid object rather than a white light source.
+        vec3 color = vec3(0.0015, 0.0025, 0.008);
+        color += irid * (0.006 + key * 0.12 + fill * 0.035);
+        color += irid * fresnel * 0.85;
+
+        // Emissive ribbons are the only deliberately HDR elements. They sit
+        // just above the bloom threshold so the glow keeps its cyan/magenta
+        // hue instead of clipping every channel to white.
+        vec3 ribbonColor = mix(vec3(0.0, 0.85, 1.0), vec3(1.0, 0.08, 0.55),
+                               0.28 + 0.24 * sin(shift * 4.0));
+        color += ribbonColor * ribbonA * (0.26 + vPulse * 0.45);
+        color += irid * ribbonB * 0.10;
+
+        vec3 sheenDir = normalize(vec3(0.2, 0.95, 0.35));
+        float sheen = pow(max(dot(reflect(-keyDir, N), V), 0.0), 90.0);
+        color += vec3(1.0, 0.97, 0.9) * sheen * 0.65;
+
+        // Cool neon rim reserved for the silhouette, breathing with uTime.
+        color += vec3(0.06, 0.58, 1.0) * pow(fresnel, 1.8) * (0.28 + vPulse * 0.35);
+        color += irid * pow(fresnel, 4.0) * 0.9;
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    const particleVertexShader = /* glsl */`
+      uniform float uTime;
+      uniform float uSizeScale;
+
+      attribute float aSize;
+      attribute float aPhase;
+      attribute float aSpeed;
+      attribute vec3 aColor;
+
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        // Per-particle orbital drift keeps the cloud alive without touching
+        // the CPU each frame (no attribute uploads).
+        float angle = uTime * aSpeed;
+        float c = cos(angle);
+        float s = sin(angle);
+
+        vec3 p = position;
+        p.xz = mat2(c, -s, s, c) * p.xz;
+        p.y += sin(uTime * 0.32 + aPhase) * 0.28;
+
+        vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+
+        // Perspective-correct point size: world-space size divided by view
+        // depth. This is the depth modulation that makes near motes larger.
+        float viewDepth = max(-mvPosition.z, 0.001);
+        float camDistance = length(mvPosition.xyz);
+
+        float twinkle = 0.72 + 0.28 * sin(uTime * 1.4 + aPhase * 2.3);
+        float pointSize = aSize * uSizeScale / viewDepth * twinkle;
+        gl_PointSize = clamp(pointSize, 0.6, 24.0);
+
+        // Depth-based fade: dissolve into the camera, dim into the far dark.
+        float nearFade = smoothstep(1.6, 4.2, camDistance);
+        float farFade = 1.0 - smoothstep(11.0, 22.0, camDistance);
+        vAlpha = nearFade * farFade * (0.45 + 0.45 * twinkle);
+
+        vColor = aColor;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `;
+
+    const particleFragmentShader = /* glsl */`
+      varying vec3 vColor;
+      varying float vAlpha;
+
+      void main() {
+        // Soft procedural sprite: no texture, no external asset.
+        vec2 uv = gl_PointCoord - 0.5;
+        float r = length(uv);
+        if (r > 0.5) discard;
+
+        float falloff = smoothstep(0.5, 0.0, r);
+        float alpha = pow(falloff, 2.1) * vAlpha;
+
+        // Hot core keeps a few bright specks above the bloom threshold.
+        vec3 color = vColor * (1.0 + pow(falloff, 5.0) * 0.6);
+
+        gl_FragColor = vec4(color, alpha);
+      }
+    `;
+
+    const backgroundVertexShader = /* glsl */`
+      varying vec3 vDir;
+      varying vec3 vViewDir;
+
+      void main() {
+        vDir = normalize(position);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewDir = normalize(mvPosition.xyz);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `;
+
+    const backgroundFragmentShader = /* glsl */`
+      uniform float uTime;
+
+      varying vec3 vDir;
+      varying vec3 vViewDir;
+
+      void main() {
+        vec3 dir = normalize(vDir);
+
+        // Deep vertical gradient.
+        float h = dir.y * 0.5 + 0.5;
+        vec3 col = mix(vec3(0.002, 0.003, 0.009),
+                       vec3(0.009, 0.011, 0.030),
+                       smoothstep(0.15, 0.95, h));
+
+        // Soft glow on the view axis, so the halo stays behind the knot as
+        // the camera orbits. Low values keep the background out of the bloom.
+        float axisGlow = pow(clamp(-normalize(vViewDir).z, 0.0, 1.0), 3.0);
+        col += mix(vec3(0.020, 0.035, 0.075),
+                   vec3(0.055, 0.022, 0.080),
+                   0.5 + 0.5 * sin(uTime * 0.06)) * axisGlow;
+
+        // Cheap sine curtains for a barely-there nebula texture.
+        float curtains = sin(dir.x * 2.3 + uTime * 0.025)
+                       * sin(dir.y * 3.8 - uTime * 0.04);
+        curtains += 0.5 * sin(dir.z * 4.6 + uTime * 0.03);
+        col += vec3(0.018, 0.040, 0.052) * smoothstep(0.35, 1.5, curtains);
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    const gradeShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uTime: { value: 0 },
+        uResolution: { value: new THREE.Vector2(1, 1) }
+      },
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        uniform vec2 uResolution;
+        varying vec2 vUv;
+
+        void main() {
+          vec2 centered = vUv - 0.5;
+          float r2 = dot(centered, centered);
+
+          // Very subtle lateral chromatic aberration toward the corners.
+          vec2 offset = centered * r2 * 0.004;
+          vec3 color = vec3(
+            texture2D(tDiffuse, vUv + offset).r,
+            texture2D(tDiffuse, vUv).g,
+            texture2D(tDiffuse, vUv - offset).b
+          );
+
+          // Lens vignette keeps the eye on the centre without a CSS overlay.
+          float vignette = 1.0 - smoothstep(0.42, 0.92, length(centered) * 1.25);
+          color *= mix(0.52, 1.0, vignette);
+
+          // Fine animated grain breaks up gradient banding in the dark sky.
+          float grain = fract(sin(dot(vUv * uResolution + uTime * 60.0,
+                                      vec2(12.9898, 78.233))) * 43758.5453);
+          color += (grain - 0.5) * 0.012;
+
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    };
+
+    // ------------------------------------------------------------------
+    // Scene
+    // ------------------------------------------------------------------
+    function start() {
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance'
+      });
+
+      // Cap DPR at 2: Retina displays would otherwise quadruple fragment cost.
+      const initialDpr = Math.min(window.devicePixelRatio || 1, 2);
+      renderer.setPixelRatio(initialDpr);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setClearColor(0x02030a, 1);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.0;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        window.innerWidth / window.innerHeight < 0.85 ? 56 : 42,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        120
+      );
+
+      // One uniform object shared by every material — update it once per frame.
+      const uTime = { value: 0 };
+
+      // ---- Background sphere -----------------------------------------
+      const bgGeometry = new THREE.SphereGeometry(45, 48, 32);
+      const bgMaterial = new THREE.ShaderMaterial({
+        uniforms: { uTime },
+        vertexShader: backgroundVertexShader,
+        fragmentShader: backgroundFragmentShader,
+        side: THREE.BackSide,
+        depthWrite: false,
+        depthTest: false
+      });
+      const background = new THREE.Mesh(bgGeometry, bgMaterial);
+      background.renderOrder = -10; // paint first; never occlude scene objects
+      background.frustumCulled = false;
+      scene.add(background);
+
+      // ---- Hero object: procedural torus knot ------------------------
+      const heroGeometry = new THREE.TorusKnotGeometry(1.32, 0.3, 360, 40, 2, 3);
+      const heroMaterial = new THREE.ShaderMaterial({
+        uniforms: { uTime },
+        vertexShader: heroVertexShader,
+        fragmentShader: heroFragmentShader
+      });
+      const hero = new THREE.Mesh(heroGeometry, heroMaterial);
+      hero.rotation.set(0.34, 0.2, -0.22);
+
+      const heroGroup = new THREE.Group();
+      heroGroup.add(hero);
+      scene.add(heroGroup);
+
+      // ---- Thin orbital rings ---------------------------------------
+      // Two additive tori give the bloom something fine and graphic to catch.
+      function makeRing(radius, rgb, opacity, tiltX, tiltZ) {
+        const geometry = new THREE.TorusGeometry(radius, 0.0065, 3, 256);
+        const material = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(rgb[0], rgb[1], rgb[2]),
+          transparent: true,
+          opacity,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.rotation.set(tiltX, 0, tiltZ);
+        return mesh;
+      }
+
+      const ringA = makeRing(2.6, [0.08, 0.42, 0.7], 0.15, Math.PI * 0.5 - 0.18, 0.12);
+      const ringB = makeRing(3.0, [0.42, 0.2, 0.85], 0.13, Math.PI * 0.5 + 0.38, -0.55);
+      scene.add(ringA, ringB);
+
+      // ---- Particle nebula ------------------------------------------
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+      const PARTICLE_COUNT = coarsePointer ? 4800 : 8200;
+
+      const positions = new Float32Array(PARTICLE_COUNT * 3);
+      const colors = new Float32Array(PARTICLE_COUNT * 3);
+      const sizes = new Float32Array(PARTICLE_COUNT);
+      const phases = new Float32Array(PARTICLE_COUNT);
+      const speeds = new Float32Array(PARTICLE_COUNT);
+
+      const palette = [
+        new THREE.Color('#7ee8ff'),
+        new THREE.Color('#6aa9ff'),
+        new THREE.Color('#b391ff'),
+        new THREE.Color('#eaf4ff'),
+        new THREE.Color('#ff9fce'),
+        new THREE.Color('#ffd3a1')
+      ];
+      const tint = new THREE.Color();
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const i3 = i * 3;
+        const theta = Math.random() * Math.PI * 2;
+        const radius = 2.3 + Math.pow(Math.random(), 0.7) * 5.7;
+
+        // Mostly a flattened disc, with a spherical halo mixed in for depth.
+        const inHalo = Math.random() < 0.28;
+        let x, y, z;
+        if (inHalo) {
+          const phi = Math.acos(Math.random() * 2 - 1);
+          const r = 2.6 + Math.pow(Math.random(), 0.6) * 5.0;
+          x = Math.sin(phi) * Math.cos(theta) * r;
+          z = Math.sin(phi) * Math.sin(theta) * r;
+          y = Math.cos(phi) * r * 0.8;
+        } else {
+          const spread = 0.25 + radius * 0.2;
+          x = Math.cos(theta) * radius;
+          z = Math.sin(theta) * radius;
+          y = (Math.random() * 2 - 1) * spread * Math.pow(Math.random(), 1.3);
+        }
+
+        positions[i3] = x;
+        positions[i3 + 1] = y;
+        positions[i3 + 2] = z;
+
+        const roll = Math.random();
+        const colorIndex = roll < 0.34 ? 0 : roll < 0.59 ? 1 : roll < 0.82 ? 2
+                         : roll < 0.88 ? 3 : roll < 0.97 ? 4 : 5;
+        tint.copy(palette[colorIndex]).multiplyScalar(0.32 + Math.random() * 0.4);
+        colors[i3] = tint.r;
+        colors[i3 + 1] = tint.g;
+        colors[i3 + 2] = tint.b;
+
+        // Power curve keeps most motes small, with a few bright accents.
+        sizes[i] = 0.010 + Math.pow(Math.random(), 3.0) * 0.058;
+        phases[i] = Math.random() * Math.PI * 2;
+        speeds[i] = (0.035 + Math.random() * 0.11) * (reduceMotion ? 0.2 : 1);
+      }
+
+      const particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      particleGeometry.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+      particleGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+      particleGeometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+      particleGeometry.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+
+      const particleMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime,
+          uSizeScale: { value: 1000 }
+        },
+        vertexShader: particleVertexShader,
+        fragmentShader: particleFragmentShader,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+
+      const particles = new THREE.Points(particleGeometry, particleMaterial);
+      particles.frustumCulled = false; // shader displaces points; avoid pop-out
+      scene.add(particles);
+
+      // ---- Post-processing chain ------------------------------------
+      // Render linear HDR → bloom → tone map/sRGB → subtle grade.
+      const composer = new EffectComposer(renderer);
+      const renderPass = new RenderPass(scene, camera);
+      composer.addPass(renderPass);
+
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        0.78,  // strength
+        0.45,  // radius
+        0.5    // threshold — only emissive highlights glow
+      );
+      composer.addPass(bloomPass);
+
+      const outputPass = new OutputPass();
+      composer.addPass(outputPass);
+
+      const gradePass = new ShaderPass(gradeShader);
+      composer.addPass(gradePass);
+
+      // ---- Input + damped camera orbit ------------------------------
+      const pointer = new THREE.Vector2(0, 0);
+      const pointerSmooth = new THREE.Vector2(0, 0);
+
+      // Horizontal is more generous than vertical: it feels like an orbit,
+      // while vertical movement stays a gentle pitch.
+      const YAW_SENSITIVITY = 0.92;
+      const PITCH_SENSITIVITY = 0.40;
+      const BASE_PITCH = 0.09;
+
+      let camYaw = 0;
+      let camPitch = BASE_PITCH;
+
+      function setPointer(clientX, clientY) {
+        pointer.x = THREE.MathUtils.clamp((clientX / window.innerWidth) * 2 - 1, -1, 1);
+        pointer.y = THREE.MathUtils.clamp((clientY / window.innerHeight) * 2 - 1, -1, 1);
+      }
+
+      function onPointerMove(event) {
+        setPointer(event.clientX, event.clientY);
+      }
+
+      function onPointerLeave() {
+        pointer.set(0, 0);
+      }
+
+      window.addEventListener('pointermove', onPointerMove, { passive: true });
+      window.addEventListener('pointerleave', onPointerLeave, { passive: true });
+
+      // ---- Responsive sizing ----------------------------------------
+      let sizeScale = 1000;
+
+      function onResize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const aspect = width / height;
+
+        // Same DPR cap on resize (browser zoom / monitor changes).
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        renderer.setPixelRatio(dpr);
+        renderer.setSize(width, height);
+
+        camera.aspect = aspect;
+        camera.fov = aspect < 0.85 ? 56 : 42;
+        camera.updateProjectionMatrix();
+
+        // EffectComposer owns the bloom render targets: resizing it (after
+        // setting the pixel ratio) prevents stretching artifacts.
+        composer.setPixelRatio(dpr);
+        composer.setSize(width, height);
+
+        // Convert a world-space particle size into physical pixels using the
+        // current viewport height and FOV.
+        sizeScale = (height * dpr) / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov * 0.5)));
+        particleMaterial.uniforms.uSizeScale.value = sizeScale;
+
+        gradePass.uniforms.uResolution.value.set(width, height);
+      }
+
+      window.addEventListener('resize', onResize);
+      onResize();
+
+      // Initialize camera before the first frame (smoothed pointer is at 0).
+      camera.position.set(0, 0.75, 7.1);
+      camera.lookAt(0, 0, 0);
+
+      // ---- Animation loop -------------------------------------------
+      const FRAME_INTERVAL = 1000 / 60; // ~60fps cap on 120/144Hz displays
+      let lastRender = performance.now();
+      let elapsed = 0;
+      let rafId = 0;
+      let firstFrame = true;
+      let disposed = false;
+
+      function reveal() {
+        if (window.__sceneReady) return;
+        window.__sceneReady = true;
+        document.body.classList.add('is-ready');
+        loader.setAttribute('aria-hidden', 'true');
+      }
+
+      function animate(now) {
+        rafId = requestAnimationFrame(animate);
+
+        const sinceLast = now - lastRender;
+        // Frame gate: on 120/144Hz displays, skip extra RAF callbacks. Advancing
+        // the deadline by a fixed interval (rather than snapping to "now")
+        // keeps a steady ~60fps cadence instead of drifting down.
+        // 1ms tolerance absorbs RAF jitter on 60Hz panels, which would
+        // otherwise skip a frame (16.6ms < 16.67ms) and stutter to 30fps.
+        if (sinceLast < FRAME_INTERVAL - 1) return;
+        if (sinceLast > FRAME_INTERVAL * 4) {
+          lastRender = now - FRAME_INTERVAL; // resync after a long stall
+        } else {
+          lastRender += FRAME_INTERVAL;
+        }
+
+        // Clamp dt so a background tab / hitch never teleports the scene.
+        const dt = Math.min(sinceLast / 1000, 0.05);
+        elapsed += dt;
+        uTime.value = elapsed;
+
+        // Exponential damping is framerate-independent and buttery: no snap.
+        const pointerEase = 1 - Math.exp(-3.2 * dt);
+        pointerSmooth.x += (pointer.x - pointerSmooth.x) * pointerEase;
+        pointerSmooth.y += (pointer.y - pointerSmooth.y) * pointerEase;
+
+        const idleYaw = Math.sin(elapsed * 0.09) * 0.13;
+        const idlePitch = Math.sin(elapsed * 0.12) * 0.035;
+
+        const targetYaw = idleYaw + pointerSmooth.x * YAW_SENSITIVITY;
+        const targetPitch = BASE_PITCH - pointerSmooth.y * PITCH_SENSITIVITY + idlePitch;
+
+        const cameraEase = 1 - Math.exp(-2.6 * dt);
+        camYaw += (targetYaw - camYaw) * cameraEase;
+        camPitch += (targetPitch - camPitch) * cameraEase;
+
+        const radius = window.innerWidth / window.innerHeight < 0.85 ? 9.3 : 8.4;
+        const phi = Math.PI * 0.5 - camPitch; // polar angle from +Y
+        camera.position.setFromSphericalCoords(radius, phi, camYaw);
+        camera.lookAt(0, 0.02, 0);
+
+        // Hero motion is layered on top of the shader's own deformation.
+        hero.rotation.y = elapsed * 0.13;
+        hero.rotation.x = 0.34 + Math.sin(elapsed * 0.17) * 0.10;
+        hero.rotation.z = -0.22 + Math.sin(elapsed * 0.11 + 1.0) * 0.06;
+
+        ringA.rotation.z = 0.12 + Math.sin(elapsed * 0.12) * 0.06;
+        ringB.rotation.z = -0.55 + Math.sin(elapsed * 0.09 + 1.4) * 0.08;
+
+        gradePass.uniforms.uTime.value = elapsed;
+
+        composer.render();
+
+        if (firstFrame) {
+          firstFrame = false;
+          // Let the first composed frame hit the screen before revealing the
+          // scene, so the fade never exposes an empty canvas.
+          requestAnimationFrame(reveal);
+        }
+      }
+
+      rafId = requestAnimationFrame(animate);
+
+      // ---- Cleanup ---------------------------------------------------
+      // Nothing is rebuilt during runtime (resize reuses GPU resources), but a
+      // full disposal path keeps hot-reload / SPA teardown leak-free.
+      function onContextLost(event) {
+        event.preventDefault();
+        cancelAnimationFrame(rafId);
+        window.__sceneReady = false;
+        document.body.classList.remove('is-ready');
+        window.__loadError('The graphics context was lost. Reload the page to restart the scene.');
+      }
+
+      function dispose() {
+        if (disposed) return;
+        disposed = true;
+        cancelAnimationFrame(rafId);
+
+        window.removeEventListener('resize', onResize);
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerleave', onPointerLeave);
+        canvas.removeEventListener('webglcontextlost', onContextLost);
+
+        scene.traverse((object) => {
+          if (object.geometry) object.geometry.dispose();
+          if (object.material) {
+            const materials = Array.isArray(object.material) ? object.material : [object.material];
+            materials.forEach((material) => {
+              for (const key of Object.keys(material)) {
+                const value = material[key];
+                if (value && value.isTexture) value.dispose();
+              }
+              material.dispose();
+            });
+          }
+        });
+
+        composer.passes.forEach((pass) => {
+          if (typeof pass.dispose === 'function') pass.dispose();
+        });
+        composer.dispose();
+        renderer.dispose();
+      }
+
+      window.addEventListener('pagehide', dispose, { once: true });
+      canvas.addEventListener('webglcontextlost', onContextLost);
+    }
+
+    try {
+      start();
+    } catch (error) {
+      console.error(error);
+      window.__loadError('WebGL could not start in this browser. Try enabling hardware acceleration.');
+    }
+  </script>
+</body>
+</html>

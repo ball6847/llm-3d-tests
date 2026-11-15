@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Torus — Three.js</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%; overflow: hidden;
+    background: #050508; color: #fff;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  #stage { position: relative; width: 100vw; height: 100vh; display: block; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #loading {
+    position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+    background: #050508; color: #cfafff; letter-spacing: 0.25rem; font-size: 1.25rem;
+    transition: opacity 900ms ease, pointer-events 900ms ease;
+  }
+  #loading.fade-out { opacity: 0; pointer-events: none; }
+  #hud {
+    position: fixed; bottom: 1.2rem; left: 1.2rem; z-index: 50;
+    display: grid; gap: 0.25rem; color: rgba(255,255,255,0.65); font-size: 0.85rem;
+    pointer-events: none;
+  }
+  .kbd { color: #cfafff; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="loading">Loading…</div>
+<div id="hud">
+  <div>Move mouse to orbit <span class="kbd">(smooth lerp)</span></div>
+  <div>Procedural torus knot • GLSL aurora shader • BufferGeometry points • Unreal bloom</div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ------------------------------------------------------------------
+// Setup
+// ------------------------------------------------------------------
+const stage = document.getElementById('stage');
+const loading = document.getElementById('loading');
+
+const width = window.innerWidth;
+const height = window.innerHeight;
+
+// Scene + camera
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(55, width / height, 0.1, 100);
+camera.position.set(0, 0, 24);
+
+// Renderer — pixel ratio capped at 2 so Retina / HiDPI displays don't
+// render at >2x CSS pixels (prevents GPU overload).
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(width, height);
+renderer.setClearColor(0x050508, 1);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.appendChild(renderer.domElement);
+
+// Post-processing: RenderPass draws the scene; UnrealBloomPass extracts
+// bright (HDR > threshold) pixels and blurs them so emissive parts of the
+// hero shader visibly glow against the dark background.
+const composer = new EffectComposer(renderer);
+const renderPass = new RenderPass(scene, camera);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 1.6, 0.45, 0.55);
+bloomPass.threshold = 0.55; // only bright emissive areas bloom
+bloomPass.strength = 1.6;
+bloomPass.radius = 0.45;
+bloomPass.renderToScreen = true;
+composer.addPass(renderPass);
+composer.addPass(bloomPass);
+
+// ------------------------------------------------------------------
+// Hero object: procedurally generated torus knot + custom GLSL shader
+// ------------------------------------------------------------------
+const heroGeo = new THREE.TorusKnotGeometry(4, 1.4, 200, 32);
+// TorusKnotGeometry is fully procedural (no external asset) and provides a
+// rich, continuously curved surface for the shader to displace and color.
+
+// Custom ShaderMaterial: vertexShader breathes the surface; fragmentShader
+// shifts hue over time (iridescent / aurora) using the uTime uniform.
+const heroMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+  },
+  vertexShader: `
+    uniform float uTime;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    void main() {
+      vNormal = normal;
+      vPosition = position;
+      // Breathing displacement along the normal, varying over surface + time
+      float pulse = sin(uTime * 3.0 + position.x * 1.1 + position.z * 0.9) * 0.18;
+      vec3 pos = position + normal * pulse;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+
+    // Compact HSV->RGB so we can rotate hue smoothly for an aurora shift
+    vec3 hsv2rgb(vec3 c) {
+      vec3 rgb = clamp(abs(mod(c.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+      return c.z * mix(vec3(1.0), rgb, c.y);
+    }
+
+    void main() {
+      // Hue drifts over time and across the surface -> iridescent color shift
+      float hue = 0.55
+        + sin(uTime * 0.45 + vPosition.y * 0.6) * 0.35
+        + sin(uTime * 0.25 + vPosition.x * 0.5) * 0.25;
+      hue = fract(hue);
+      float sat = 0.85 + 0.15 * sin(uTime * 1.1 + vPosition.z * 0.4);
+      // Value > 1.0 produces HDR emissive color that the bloom pass picks up
+      float val = 1.6 + 0.5 * sin(uTime * 2.0 + vPosition.y);
+      vec3 color = hsv2rgb(vec3(hue, sat, val));
+      gl_FragColor = vec4(color, 0.98);
+    }
+  `,
+  depthWrite: true,
+});
+
+const hero = new THREE.Mesh(heroGeo, heroMat);
+scene.add(hero);
+
+// ------------------------------------------------------------------
+// Particle field: BufferGeometry + gl.POINTS (thousands of points, not meshes)
+// ------------------------------------------------------------------
+const PARTICLE_COUNT = 7000;
+const particleGeo = new THREE.BufferGeometry();
+const positions = new Float32Array(PARTICLE_COUNT * 3);
+const phases = new Float32Array(PARTICLE_COUNT);
+const speeds = new Float32Array(PARTICLE_COUNT);
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const i3 = i * 3;
+  // Random point on a spherical shell around the hero (radius 13-19)
+  const r = 13 + Math.random() * 6;
+  const phi = Math.random() * Math.PI;
+  const theta = Math.random() * Math.PI * 2;
+  positions[i3]     = r * Math.sin(phi) * Math.cos(theta);
+  positions[i3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  positions[i3 + 2] = r * Math.cos(phi);
+  phases[i]  = Math.random() * Math.PI * 2;   // per-particle orbit offset
+  speeds[i]  = (Math.random() - 0.5) * 1.2;   // some orbit clockwise, some ccw
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+particleGeo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+particleGeo.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+
+const particleMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+    uCameraPos: { value: new THREE.Vector3() },
+  },
+  vertexShader: `
+    uniform float uTime;
+    uniform vec3 uCameraPos;
+    attribute float aPhase;
+    attribute float aSpeed;
+    varying float vDepth;
+    varying float vAlpha;
+    void main() {
+      vec3 pos = position;                          // object == world (mesh at origin)
+      // Orbit around the Y axis; each particle has its own phase + speed
+      float angle = uTime * aSpeed + aPhase;
+      float s = sin(angle), c = cos(angle);
+      float x = pos.x * c - pos.z * s;
+      float z = pos.x * s + pos.z * c;
+      float y = pos.y + sin(uTime * 0.6 + aPhase) * 0.2; // gentle vertical bob
+      vec3 worldPos = vec3(x, y, z);
+      vDepth = distance(worldPos, uCameraPos);      // depth for fade
+      // Size grows as the particle nears the camera (depth-based)
+      float size = 2.6 * (1.0 / (1.0 + vDepth * 0.07));
+      gl_PointSize = size;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
+      // Opacity fades with distance so far particles vanish into the dark
+      vAlpha = 1.0 - smoothstep(6.0, 30.0, vDepth);
+    }
+  `,
+  fragmentShader: `
+    uniform float uTime;
+    varying float vDepth;
+    varying float vAlpha;
+    void main() {
+      // Discard corners so each point is a soft circle, not a square
+      float d = length(gl_PointCoord - vec2(0.5));
+      if (d > 0.5) discard;
+      float edge = 1.0 - smoothstep(0.42, 0.50, d);
+      // Cooler tint far away, warmer near -> depth cue
+      vec3 color = mix(vec3(0.15, 0.45, 0.95), vec3(0.85, 0.5, 1.0), 1.0 - vDepth * 0.04);
+      gl_FragColor = vec4(color * edge, vAlpha * edge);
+    }
+  `,
+  transparent: true,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending, // additive points look like glowing dust
+});
+
+const particles = new THREE.Points(particleGeo, particleMat);
+scene.add(particles);
+
+// ------------------------------------------------------------------
+// Mouse-reactive camera (smooth lerp / damping; horizontal + vertical)
+// ------------------------------------------------------------------
+const mouse = new THREE.Vector2(0, 0);
+let targetTheta = 0;
+let targetPhi = Math.PI / 2;
+let theta = 0;
+let phi = Math.PI / 2;
+const orbitRadius = 24;
+const phiMin = 0.15;   // clamped so the camera never flips over the poles
+const phiMax = Math.PI - 0.15;
+const damping = 0.07;  // lower = smoother / slower orbit
+const sensX = 1.4;     // horizontal sensitivity
+const sensY = 0.9;     // vertical sensitivity
+
+window.addEventListener('pointermove', (e) => {
+  mouse.x = (e.clientX / width) * 2 - 1;   // -1 .. 1
+  mouse.y = -(e.clientY / height) * 2 + 1; // -1 .. 1 (up is positive)
+}, { passive: true });
+
+function updateCamera() {
+  targetTheta = mouse.x * sensX;
+  targetPhi = Math.PI / 2 + mouse.y * sensY;
+  targetPhi = Math.min(Math.max(targetPhi, phiMin), phiMax);
+
+  // Smooth interpolation toward the target — no snapping
+  theta += (targetTheta - theta) * damping;
+  phi += (targetPhi - phi) * damping;
+
+  camera.position.x = orbitRadius * Math.sin(phi) * Math.cos(theta);
+  camera.position.y = orbitRadius * Math.cos(phi);
+  camera.position.z = orbitRadius * Math.sin(phi) * Math.sin(theta);
+  camera.lookAt(0, 0, 0);
+
+  // Feed camera world position to the particle shader for depth-based fade
+  particleMat.uniforms.uCameraPos.value.copy(camera.position);
+}
+
+// ------------------------------------------------------------------
+// Resize handling (renderer, camera aspect, composer)
+// ------------------------------------------------------------------
+function onResize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+}
+window.addEventListener('resize', onResize);
+
+// ------------------------------------------------------------------
+// Animation loop (~60fps via requestAnimationFrame) + loading overlay
+// ------------------------------------------------------------------
+const clock = new THREE.Clock();
+let firstFrame = true;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const time = clock.getElapsedTime();
+
+  // Slow automatic rotation of the hero for visual interest
+  hero.rotation.y = time * 0.12;
+  hero.rotation.x = time * 0.06;
+
+  // Shader uniforms — uTime drives the iridescent aurora shift
+  heroMat.uniforms.uTime.value = time;
+  particleMat.uniforms.uTime.value = time;
+
+  updateCamera();
+
+  // Composer renders RenderPass then bloom to screen
+  composer.render();
+
+  // Fade out the loading overlay after the first rendered frame so the
+  // user knows the scene initialized.
+  if (firstFrame) {
+    firstFrame = false;
+    loading.classList.add('fade-out');
+    setTimeout(() => { loading.remove(); }, 1000);
+  }
+}
+
+animate();
+
+// ------------------------------------------------------------------
+// Performance guardrails / cleanup notes
+// ------------------------------------------------------------------
+// requestAnimationFrame naturally caps the loop at ~60fps on most displays.
+// Geometries/materials are created once and reused; if you rebuild them,
+// call geometry.dispose() and material.dispose() to free GPU memory.
+// renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) prevents
+// Retina/HiDPI displays from rendering at >2x CSS pixels (GPU overload).
+// All content is procedural — no external assets, no build tools.
+</script>
+</body>
+</html>

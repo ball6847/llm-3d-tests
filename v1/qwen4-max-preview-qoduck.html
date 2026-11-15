@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#050b10">
+  <title>Aurora — A Realtime Light Study</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050b10;
+      --surface: rgba(9, 18, 24, .95);
+      --line: rgba(151, 205, 199, .16);
+      --text: #e8f3ef;
+      --muted: #8ba5a3;
+      --teal: #72f2d0;
+      --blue: #6eb9ff;
+      --amber: #ffc477;
+      --danger: #ff8d7e;
+      --controls-height: 292px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--bg); }
+    body { color: var(--text); -webkit-font-smoothing: antialiased; }
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+    button, select, input[type="range"], input[type="checkbox"] { cursor: pointer; }
+    button:focus-visible, select:focus-visible, input:focus-visible, canvas:focus-visible {
+      outline: 2px solid var(--teal);
+      outline-offset: 3px;
+    }
+    ::selection { background: rgba(114, 242, 208, .28); }
+
+    #stage { position: fixed; inset: 0; }
+    #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+    #stage canvas:active { cursor: grabbing; }
+
+    .topbar {
+      position: fixed; inset: 0 0 auto; height: 76px; z-index: 5;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 40px; border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(5, 11, 16, .97), rgba(5, 11, 16, .82));
+    }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand svg { width: 30px; height: 30px; color: var(--teal); }
+    .brand-name { font-size: 13px; font-weight: 650; letter-spacing: .32em; }
+    .brand-note { margin-left: 16px; padding-left: 18px; border-left: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: .18em; }
+    .top-actions { display: flex; align-items: center; gap: 20px; }
+    .system-status { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 10px; letter-spacing: .16em; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 10px rgba(114, 242, 208, .8); }
+    body.is-paused .status-dot { background: var(--amber); box-shadow: 0 0 10px rgba(255, 196, 119, .6); }
+    #fps { min-width: 52px; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .06em; }
+    .quiet-button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+      min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px;
+      background: rgba(151, 205, 199, .05); font-size: 11px; letter-spacing: .04em;
+      transition: border-color .2s, background .2s, transform .2s;
+    }
+    .quiet-button:hover { border-color: rgba(114, 242, 208, .5); background: rgba(114, 242, 208, .1); }
+    .quiet-button:active { transform: translateY(1px); }
+    .quiet-button svg { width: 13px; height: 13px; }
+
+    .intro { position: fixed; z-index: 3; left: 48px; top: 50%; width: 265px; transform: translateY(-52%); pointer-events: none; }
+    .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 22px; color: var(--teal); font-size: 9px; font-weight: 600; letter-spacing: .24em; }
+    .eyebrow::before { content: ""; width: 24px; height: 1px; background: currentColor; }
+    h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(48px, 4.6vw, 68px); font-weight: 400; line-height: .99; letter-spacing: -.045em; }
+    h1 em { color: var(--teal); font-weight: 400; }
+    .intro-copy { max-width: 225px; margin: 24px 0 0; color: var(--muted); font-size: 12px; line-height: 1.75; }
+    .specimen { display: flex; align-items: center; gap: 10px; margin-top: 30px; color: #b7cfca; font-size: 9px; letter-spacing: .18em; }
+    .specimen span:first-child { color: var(--amber); }
+    .specimen::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+    .control-panel {
+      position: fixed; z-index: 6; top: 108px; right: 32px; width: 264px;
+      padding: 20px; border: 1px solid var(--line); border-radius: 12px;
+      background: var(--surface);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .3);
+      display: flex; flex-direction: column; gap: 17px;
+      max-height: calc(100dvh - 176px); overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: rgba(114, 242, 208, .4) rgba(151, 205, 199, .06);
+    }
+    .control-panel::-webkit-scrollbar { width: 5px; }
+    .control-panel::-webkit-scrollbar-track { background: rgba(151, 205, 199, .06); }
+    .control-panel::-webkit-scrollbar-thumb { background: rgba(114, 242, 208, .4); border-radius: 4px; }
+    .panel-heading { display: flex; align-items: center; justify-content: space-between; }
+    .panel-heading h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; }
+    .panel-heading span { color: var(--muted); font-size: 9px; letter-spacing: .12em; }
+    fieldset { min-width: 0; margin: 0; padding: 0; border: 0; display: contents; }
+    .control-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 9px; color: var(--muted); font-size: 10px; letter-spacing: .08em; }
+    .control-label output { color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+    .palette-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .palette-button {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px;
+      background: transparent; color: var(--muted); font-size: 9px;
+      transition: color .2s, border-color .2s, background .2s;
+    }
+    .palette-button::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--swatch); box-shadow: 0 0 8px color-mix(in srgb, var(--swatch) 55%, transparent); }
+    .palette-button[aria-pressed="true"] { color: var(--text); border-color: rgba(114, 242, 208, .55); background: rgba(114, 242, 208, .08); }
+    .select-wrap { position: relative; }
+    .select-wrap::after { content: ""; position: absolute; right: 12px; top: 50%; width: 6px; height: 6px; border-right: 1px solid var(--muted); border-bottom: 1px solid var(--muted); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+    select {
+      width: 100%; height: 34px; appearance: none; padding: 0 30px 0 11px;
+      border: 1px solid var(--line); border-radius: 6px; background: rgba(151, 205, 199, .04);
+      color: var(--text); font-size: 11px;
+    }
+    select option { background: #0b151c; }
+    input[type="range"] {
+      --fill: 50%; width: 100%; height: 18px; margin: 0; appearance: none; background: transparent; display: block;
+    }
+    input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 3px; background: linear-gradient(90deg, var(--teal) var(--fill), rgba(151, 205, 199, .16) var(--fill)); }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; margin-top: -4px; border: 2px solid #0b151c; border-radius: 50%; background: var(--teal); box-shadow: 0 0 0 1px rgba(114, 242, 208, .5), 0 0 10px rgba(114, 242, 208, .3); }
+    input[type="range"]::-moz-range-track { height: 3px; border-radius: 3px; background: rgba(151, 205, 199, .16); }
+    input[type="range"]::-moz-range-progress { height: 3px; border-radius: 3px; background: var(--teal); }
+    input[type="range"]::-moz-range-thumb { width: 8px; height: 8px; border: 2px solid #0b151c; border-radius: 50%; background: var(--teal); }
+    .switches { display: flex; flex-direction: column; gap: 11px; padding-top: 2px; }
+    .switch-row { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 10px; letter-spacing: .06em; cursor: pointer; }
+    .switch-row input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .switch-track { position: relative; width: 28px; height: 15px; border: 1px solid var(--line); border-radius: 10px; background: rgba(151, 205, 199, .08); transition: background .2s, border-color .2s; }
+    .switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); transition: transform .2s, background .2s; }
+    .switch-row input:checked + .switch-track { border-color: rgba(114, 242, 208, .5); background: rgba(114, 242, 208, .18); }
+    .switch-row input:checked + .switch-track::after { transform: translateX(13px); background: var(--teal); }
+    .switch-row input:focus-visible + .switch-track { outline: 2px solid var(--teal); outline-offset: 3px; }
+    .panel-actions { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 6px; padding-top: 2px; }
+    .panel-actions button { min-width: 0; height: 34px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: rgba(151, 205, 199, .05); font-size: 9px; letter-spacing: .03em; transition: background .2s, border-color .2s; }
+    .panel-actions button:hover { background: rgba(114, 242, 208, .12); border-color: rgba(114, 242, 208, .45); }
+    .panel-actions .export { color: #06231c; background: var(--teal); border-color: var(--teal); font-weight: 650; }
+    .panel-actions .export:hover { background: #9ff8e0; }
+
+    .scene-footer {
+      position: fixed; z-index: 3; left: 40px; right: 40px; bottom: 24px;
+      display: flex; align-items: center; justify-content: space-between; pointer-events: none;
+      color: var(--muted); font-size: 9px; letter-spacing: .14em;
+    }
+    .hints { display: flex; align-items: center; gap: 22px; }
+    .hints span { display: flex; align-items: center; gap: 8px; }
+    .hints svg { width: 13px; height: 13px; color: #b7cfca; }
+    .footer-note { color: rgba(139, 165, 163, .65); }
+    #particle-stat { color: #b7cfca; font-variant-numeric: tabular-nums; }
+
+    #loading {
+      position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px; text-align: center;
+      background: radial-gradient(ellipse at 50% 45%, #0b1c22 0%, var(--bg) 65%);
+      transition: opacity .7s ease, visibility 0s linear .7s;
+    }
+    body.is-ready #loading { opacity: 0; visibility: hidden; pointer-events: none; }
+    .loader-orbit { position: relative; width: 46px; height: 46px; border: 1px solid rgba(114, 242, 208, .2); border-radius: 50%; animation: spin 1.6s linear infinite; }
+    .loader-orbit::after { content: ""; position: absolute; top: -3px; left: 50%; width: 6px; height: 6px; border-radius: 50%; background: var(--teal); box-shadow: 0 0 14px var(--teal); }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-title { margin: 0; font-family: Georgia, serif; font-size: 24px; font-weight: 400; }
+    #loading-detail { max-width: 330px; margin: 0; padding: 0 24px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    #retry { display: none; margin-top: 4px; }
+    #loading.is-error .loader-orbit { display: none; }
+    #loading.is-error #retry { display: inline-flex; }
+
+    #toast {
+      position: fixed; z-index: 15; left: 50%; bottom: 64px; transform: translate(-50%, 12px);
+      padding: 10px 16px; border: 1px solid rgba(114, 242, 208, .35); border-radius: 8px;
+      background: rgba(9, 24, 25, .94); color: var(--teal); font-size: 11px; letter-spacing: .04em;
+      opacity: 0; pointer-events: none; transition: opacity .25s, transform .25s;
+    }
+    #toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+    @media (max-width: 1100px) and (min-width: 901px) {
+      .intro { left: 32px; width: 225px; }
+      .intro-copy { max-width: 200px; }
+      .control-panel { right: 24px; width: 244px; padding: 17px; }
+      .brand-note { display: none; }
+    }
+    @media (max-width: 900px) {
+      :root { --controls-height: min(292px, 48dvh); }
+      .topbar { height: 64px; padding: 0 20px; }
+      .brand-note, .system-status #fps, .footer-note { display: none; }
+      .top-actions { gap: 12px; }
+      #stage { inset: 112px 0 var(--controls-height); }
+      .intro { left: 22px; top: 82px; width: auto; transform: none; }
+      .eyebrow { margin-bottom: 8px; font-size: 8px; }
+      h1 { font-size: 34px; line-height: 1; }
+      h1 br { display: none; }
+      h1 em::before { content: " "; }
+      .intro-copy, .specimen { display: none; }
+      .control-panel {
+        inset: auto 0 0; width: auto; max-height: min(var(--controls-height), 48dvh);
+        padding: 14px 18px; border-radius: 14px 14px 0 0; border-bottom: 0;
+        display: grid; grid-template-columns: 1fr 1fr; gap: 11px 18px;
+        background: rgba(8, 17, 23, .96);
+      }
+      .panel-heading, .switches, .panel-actions { grid-column: 1 / -1; }
+      .panel-heading span { display: none; }
+      .control-label { margin-bottom: 6px; }
+      .switches { flex-direction: row; justify-content: space-between; gap: 18px; padding-top: 0; }
+      .switch-row { flex: 1; }
+      .panel-actions { grid-template-columns: 1.2fr 1fr 1fr; padding-top: 0; }
+      .scene-footer { left: 0; right: 0; bottom: calc(var(--controls-height) + 10px); justify-content: center; font-size: 8px; }
+      .hints { gap: 16px; }
+      .hints span:last-child { display: none; }
+      #toast { bottom: calc(var(--controls-height) + 42px); }
+    }
+    @media (max-width: 380px) {
+      .brand-name { font-size: 11px; letter-spacing: .24em; }
+      .system-status { display: none; }
+      .control-panel { padding-inline: 14px; gap: 10px 14px; }
+    }
+    @media (max-width: 900px) and (max-height: 520px) {
+      .intro, .scene-footer { display: none; }
+      #stage { inset: 64px 0 var(--controls-height); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <circle cx="16" cy="16" r="4.5" stroke="currentColor" stroke-width="1.2"/>
+        <ellipse cx="16" cy="16" rx="13" ry="6.5" stroke="currentColor" stroke-width="1" transform="rotate(-32 16 16)"/>
+        <ellipse cx="16" cy="16" rx="13" ry="6.5" stroke="currentColor" stroke-width="1" opacity=".45" transform="rotate(58 16 16)"/>
+        <circle cx="26" cy="9" r="1.8" fill="currentColor"/>
+      </svg>
+      <span class="brand-name">AURORA</span>
+      <span class="brand-note">FIELD NOTES / 001</span>
+    </div>
+    <div class="top-actions">
+      <div class="system-status"><span class="status-dot"></span><span id="system-label">INITIALIZING</span><span id="fps">— FPS</span></div>
+      <button id="pause" class="quiet-button" type="button" aria-pressed="false" disabled title="Pause or resume motion (Space)">
+        <svg id="pause-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/></svg>
+        <span id="pause-label">Pause</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="intro" aria-label="About this scene">
+    <p class="eyebrow">A REALTIME LIGHT STUDY</p>
+    <h1>Light has <br>a life of <br><em>its own.</em></h1>
+    <p class="intro-copy">An ever-changing sculpture of color, motion, and a little cosmic dust. Move closer. Stay a while.</p>
+    <p class="specimen"><span>001</span><span id="specimen-name">THE AURORA KNOT</span></p>
+  </section>
+
+  <aside class="control-panel" aria-label="Scene controls">
+    <div class="panel-heading"><h2>Scene controls</h2><span>LIVE PARAMETERS</span></div>
+    <fieldset id="controls" disabled>
+      <div class="palette-control">
+        <div class="control-label" id="palette-label"><span>Palette</span></div>
+        <div class="palette-options" role="group" aria-labelledby="palette-label">
+          <button class="palette-button" type="button" data-palette="aurora" aria-pressed="true" style="--swatch:#72f2d0">Aurora</button>
+          <button class="palette-button" type="button" data-palette="solar" aria-pressed="false" style="--swatch:#ffb35c">Solar</button>
+          <button class="palette-button" type="button" data-palette="glacier" aria-pressed="false" style="--swatch:#8fc7ff">Glacier</button>
+        </div>
+      </div>
+      <div class="select-control">
+        <label class="control-label" for="shape"><span>Form</span></label>
+        <div class="select-wrap">
+          <select id="shape">
+            <option value="knot">Torus knot</option>
+            <option value="icosahedron">Icosahedron</option>
+          </select>
+        </div>
+      </div>
+      <div class="range-control">
+        <label class="control-label" for="bloom"><span>Bloom</span><output id="bloom-value" for="bloom">0.95</output></label>
+        <input id="bloom" type="range" min="0" max="2.5" step="0.05" value="0.95">
+      </div>
+      <div class="range-control">
+        <label class="control-label" for="particles"><span>Particles</span><output id="particles-value" for="particles">6,000</output></label>
+        <input id="particles" type="range" min="1000" max="12000" step="500" value="6000">
+      </div>
+      <div class="range-control">
+        <label class="control-label" for="speed"><span>Flow speed</span><output id="speed-value" for="speed">0.70×</output></label>
+        <input id="speed" type="range" min="0" max="2" step="0.05" value="0.7">
+      </div>
+      <div class="range-control">
+        <label class="control-label" for="scale"><span>Scale</span><output id="scale-value" for="scale">1.00×</output></label>
+        <input id="scale" type="range" min="0.7" max="1.3" step="0.01" value="1">
+      </div>
+      <div class="switches">
+        <label class="switch-row"><span>Wireframe</span><input id="wireframe" type="checkbox"><span class="switch-track" aria-hidden="true"></span></label>
+        <label class="switch-row"><span>Auto drift</span><input id="drift" type="checkbox" checked><span class="switch-track" aria-hidden="true"></span></label>
+      </div>
+      <div class="panel-actions">
+        <button id="randomize" type="button" title="Generate a new composition">Randomize</button>
+        <button id="reset" type="button" title="Restore defaults (R)">Reset</button>
+        <button id="export" class="export" type="button" title="Save the current frame as PNG (E)">Export PNG</button>
+      </div>
+    </fieldset>
+  </aside>
+
+  <footer class="scene-footer">
+    <div class="hints">
+      <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v12M2 8h12M8 2 6 4m2-2 2 2M8 14l-2-2m2 2 2-2M2 8l2-2m-2 2 2 2M14 8l-2-2m2 2-2 2" stroke="currentColor" stroke-width="1"/></svg>DRAG TO ORBIT</span>
+      <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="5" y="2" width="6" height="12" rx="3" stroke="currentColor"/><path d="M8 5v3" stroke="currentColor" stroke-linecap="round"/></svg>SCROLL TO ZOOM</span>
+      <span id="particle-stat">6,000 PARTICLES</span>
+    </div>
+    <span class="footer-note">BUILT FROM NOTHING BUT MATH</span>
+  </footer>
+
+  <div id="loading" role="status" aria-live="polite">
+    <div class="loader-orbit" aria-hidden="true"></div>
+    <h2 id="loading-title">Loading…</h2>
+    <p id="loading-detail">Gathering light from the mathematics.</p>
+    <button id="retry" class="quiet-button" type="button">Try again</button>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <p class="sr-only" id="canvas-help">Interactive 3D sculpture. Drag to orbit, scroll to zoom, or use arrow keys and plus/minus when the canvas is focused. Space pauses motion.</p>
+
+  <script type="module">
+    const loading = document.getElementById('loading');
+    const loadingTitle = document.getElementById('loading-title');
+    const loadingDetail = document.getElementById('loading-detail');
+    document.getElementById('retry').addEventListener('click', () => location.reload());
+
+    function showFallback(error) {
+      console.error('Aurora failed to initialize:', error);
+      loading.classList.add('is-error');
+      loadingTitle.textContent = 'The light couldn’t start.';
+      loadingDetail.textContent = 'This scene needs WebGL 2 and an internet connection for the Three.js CDN. Enable hardware acceleration or try another browser, then retry.';
+      document.getElementById('system-label').textContent = 'UNAVAILABLE';
+    }
+
+    async function boot() {
+      let importTimeout;
+      let modules;
+      try {
+        // Dynamic imports let CDN or network failures reach the graceful fallback instead of a blank page.
+        modules = await Promise.race([
+          Promise.all([
+            import('three'),
+            import('three/addons/postprocessing/EffectComposer.js'),
+            import('three/addons/postprocessing/RenderPass.js'),
+            import('three/addons/postprocessing/UnrealBloomPass.js'),
+            import('three/addons/postprocessing/OutputPass.js')
+          ]),
+          new Promise((_, reject) => { importTimeout = setTimeout(() => reject(new Error('CDN import timed out')), 20000); })
+        ]);
+      } finally {
+        clearTimeout(importTimeout);
+      }
+
+      const [THREE, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = modules;
+      const stage = document.getElementById('stage');
+      const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const MAX_PARTICLES = 12000;
+      const DEFAULTS = { palette: 'aurora', shape: 'knot', bloom: 0.95, particles: 6000, speed: 0.7, scale: 1, wireframe: false, drift: !reducedMotion };
+      const state = { ...DEFAULTS, paused: reducedMotion };
+      const PALETTES = {
+        aurora: { a: 0x0b3f4a, b: 0x49e6c2, c: 0x7a8cff, accent: 0xffc477 },
+        solar: { a: 0x4a1608, b: 0xffb35c, c: 0xff5e3a, accent: 0xffe6a3 },
+        glacier: { a: 0x102a4a, b: 0x8fc7ff, c: 0xc4a8ff, accent: 0x72f2d0 }
+      };
+
+      // Capping DPR avoids rendering four times the pixels on high-density displays.
+      const pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+      const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+      renderer.setPixelRatio(pixelRatio());
+      renderer.setClearColor(0x050b10, 1);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.domElement.tabIndex = 0;
+      renderer.domElement.setAttribute('aria-label', 'Aurora interactive 3D scene');
+      renderer.domElement.setAttribute('aria-describedby', 'canvas-help');
+      stage.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+      const composer = new EffectComposer(renderer);
+      const renderPass = new RenderPass(scene, camera);
+      // Bloom extracts only HDR-bright shader regions, so emissive veins glow while the background stays dark.
+      const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), state.bloom, 0.45, 1.0);
+      // Bloom is inherently soft, so a reduced-resolution blur chain preserves the look at lower GPU cost.
+      const sizeBloom = bloomPass.setSize.bind(bloomPass);
+      bloomPass.setSize = (width, height) => sizeBloom(Math.max(1, Math.round(width * 0.75)), Math.max(1, Math.round(height * 0.75)));
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+      composer.addPass(new OutputPass());
+
+      const paletteUniforms = {
+        uColorA: { value: new THREE.Color(PALETTES.aurora.a) },
+        uColorB: { value: new THREE.Color(PALETTES.aurora.b) },
+        uColorC: { value: new THREE.Color(PALETTES.aurora.c) }
+      };
+
+      // A fullscreen procedural backdrop adds atmospheric depth without textures or extra render passes.
+      const backgroundGeometry = new THREE.BufferGeometry();
+      backgroundGeometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+      const backgroundMaterial = new THREE.ShaderMaterial({
+        depthTest: false, depthWrite: false,
+        uniforms: { uAspect: { value: 1 }, uTint: { value: new THREE.Color(PALETTES.aurora.b) } },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() { vUv = position.xy * 0.5 + 0.5; gl_Position = vec4(position.xy, 1.0, 1.0); }
+        `,
+        fragmentShader: `
+          uniform float uAspect;
+          uniform vec3 uTint;
+          varying vec2 vUv;
+          void main() {
+            vec2 p = (vUv - vec2(0.5, 0.52)) * vec2(uAspect, 1.0);
+            vec2 q = p - vec2(-0.45, -0.3);
+            float g = max(0.0, 1.0 - dot(p, p) * 2.2);
+            float h = max(0.0, 1.0 - dot(q, q) * 3.0);
+            vec3 color = vec3(0.002, 0.005, 0.008);
+            color += uTint * (g * g) * 0.012;
+            color += vec3(0.004, 0.006, 0.012) * (h * h);
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `
+      });
+      const background = new THREE.Mesh(backgroundGeometry, backgroundMaterial);
+      background.frustumCulled = false;
+      background.renderOrder = -1000;
+      scene.add(background);
+
+      const heroUniforms = { uTime: { value: 0 }, ...paletteUniforms };
+      const heroMaterial = new THREE.ShaderMaterial({
+        uniforms: heroUniforms,
+        vertexShader: `
+          uniform float uTime;
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          varying vec3 vWorldPosition;
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            // Gentle vertex displacement makes the surface breathe without rebuilding geometry each frame.
+            float wave = sin(position.x * 2.8 + uTime * 0.8) * sin(position.y * 3.2 - uTime * 0.6) * sin(position.z * 2.5 + uTime * 0.4);
+            vec3 transformed = position + normal * (wave * 0.045 + sin(uTime * 1.1) * 0.025);
+            vec4 worldPosition = modelMatrix * vec4(transformed, 1.0);
+            vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+            vNormal = normalize(normalMatrix * normal);
+            vViewPosition = -mvPosition.xyz;
+            vWorldPosition = worldPosition.xyz;
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          uniform vec3 uColorA;
+          uniform vec3 uColorB;
+          uniform vec3 uColorC;
+          varying vec3 vNormal;
+          varying vec3 vViewPosition;
+          varying vec3 vWorldPosition;
+          varying vec2 vUv;
+          void main() {
+            vec3 N = normalize(vNormal);
+            vec3 V = normalize(vViewPosition);
+            float edge = 1.0 - max(dot(N, V), 0.0);
+            float fresnel = edge * edge * (0.6 + 0.4 * edge);
+            // Time-driven spectral mixing creates the iridescent aurora shift; uTime is the single animation clock.
+            float phase = vUv.x * 3.0 + vWorldPosition.y * 0.22 - uTime * 0.12;
+            vec3 spectral = mix(uColorA, uColorB, 0.5 + 0.5 * sin(phase * 6.28318));
+            spectral = mix(spectral, uColorC, 0.5 + 0.5 * cos(phase * 6.28318 + 1.7));
+            float flow = vUv.x * 22.0 - uTime * 0.9 + sin(vUv.y * 6.28318 + uTime * 0.4) * 1.6;
+            float veinWave = 0.5 + 0.5 * sin(flow * 3.14159);
+            float v2 = veinWave * veinWave;
+            float v4 = v2 * v2;
+            float v8 = v4 * v4;
+            float veins = v8 * v4 * v2;
+            float pulse = 0.78 + 0.22 * sin(uTime * 1.3 + vUv.x * 6.28318);
+            vec3 keyLight = normalize(vec3(-0.6, 0.8, 1.0));
+            vec3 rimLight = normalize(vec3(0.8, 0.25, -0.6));
+            float diffuse = max(dot(N, keyLight), 0.0);
+            float rim = max(dot(N, rimLight), 0.0);
+            float ndh = max(dot(N, normalize(keyLight + V)), 0.0);
+            float s2 = ndh * ndh;
+            float s4 = s2 * s2;
+            float s8 = s4 * s4;
+            float s16 = s8 * s8;
+            float specular = s16 * s16 * s16;
+            vec3 base = spectral * (0.1 + diffuse * 0.38 + rim * 0.14);
+            // Values above 1.0 feed the bloom threshold, producing visible glow rather than a flat bright color.
+            vec3 emissive = spectral * (veins * 1.1 + fresnel * 0.8) * pulse;
+            vec3 color = base + emissive + specular * vec3(0.7, 0.95, 1.0) * 0.55;
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `
+      });
+
+      function createHeroGeometry(shape) {
+        if (shape === 'icosahedron') {
+          const geometry = new THREE.IcosahedronGeometry(1.8, 1);
+          geometry.computeVertexNormals();
+          return geometry;
+        }
+        return new THREE.TorusKnotGeometry(1.35, 0.38, 256, 40, 2, 3);
+      }
+
+      const hero = new THREE.Mesh(createHeroGeometry(state.shape), heroMaterial);
+      hero.rotation.set(0.35, -0.4, 0.18);
+      scene.add(hero);
+
+      // One BufferGeometry + gl.POINTS draws thousands of particles in a single call; orbits run on the GPU.
+      const particleGeometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(MAX_PARTICLES * 3);
+      const orbits = new Float32Array(MAX_PARTICLES * 4);
+      const data = new Float32Array(MAX_PARTICLES * 3);
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        const inner = Math.random() < 0.72;
+        const radius = inner ? 2.6 + Math.pow(Math.random(), 0.7) * 4.2 : 7 + Math.random() * 12;
+        orbits[i * 4] = radius;
+        orbits[i * 4 + 1] = Math.random() * Math.PI * 2;
+        orbits[i * 4 + 2] = (0.025 + Math.random() * 0.06) * (inner ? 1 : 0.45);
+        orbits[i * 4 + 3] = inner ? 0.25 + Math.random() * 1.4 : 2 + Math.random() * 4;
+        data[i * 3] = Math.random() < 0.04 ? 0.1 + Math.random() * 0.05 : 0.025 + Math.random() * 0.055;
+        data[i * 3 + 1] = Math.random();
+        data[i * 3 + 2] = 0.25 + Math.random() * 0.65;
+      }
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      particleGeometry.setAttribute('aOrbit', new THREE.BufferAttribute(orbits, 4));
+      particleGeometry.setAttribute('aData', new THREE.BufferAttribute(data, 3));
+      particleGeometry.setDrawRange(0, state.particles);
+      const particleUniforms = { uTime: { value: 0 }, uPixelRatio: { value: pixelRatio() }, ...paletteUniforms };
+      const particleMaterial = new THREE.ShaderMaterial({
+        uniforms: particleUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: `
+          uniform float uTime;
+          uniform float uPixelRatio;
+          attribute vec4 aOrbit;
+          attribute vec3 aData;
+          varying float vOpacity;
+          varying float vSeed;
+          void main() {
+            float angle = aOrbit.y + uTime * aOrbit.z;
+            vec3 p = vec3(cos(angle) * aOrbit.x, sin(angle * 2.0 + aData.y * 6.28318) * aOrbit.w, sin(angle) * aOrbit.x);
+            float tilt = (aData.y - 0.5) * 1.2;
+            float c = cos(tilt), s = sin(tilt);
+            p.yz = mat2(c, -s, s, c) * p.yz;
+            vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
+            float depth = length(mvPosition.xyz);
+            // Depth-based size and opacity fade keep near particles legible and distant dust subtle.
+            float fade = (1.0 - smoothstep(9.0, 26.0, depth)) * smoothstep(0.4, 2.0, depth);
+            vOpacity = fade * aData.z;
+            vSeed = aData.y;
+            gl_PointSize = clamp(aData.x * uPixelRatio * (320.0 / max(depth, 0.1)) * (0.35 + 0.65 * fade), 0.75, 6.0 * uPixelRatio);
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform vec3 uColorA;
+          uniform vec3 uColorB;
+          uniform vec3 uColorC;
+          varying float vOpacity;
+          varying float vSeed;
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float core = exp(-d * d * 28.0);
+            float halo = exp(-d * d * 8.0) * 0.25;
+            float alpha = (core + halo) * vOpacity;
+            if (alpha < 0.01) discard;
+            vec3 color = mix(uColorB, uColorC, vSeed);
+            color = mix(color, uColorA, smoothstep(0.85, 1.0, vSeed) * 0.4);
+            gl_FragColor = vec4(color * (0.65 + core * 0.3), alpha);
+          }
+        `
+      });
+      const particles = new THREE.Points(particleGeometry, particleMaterial);
+      particles.frustumCulled = false;
+      scene.add(particles);
+
+      const orbitRings = [];
+      function addOrbitRing(radius, tiltX, tiltZ, opacity) {
+        const points = [];
+        for (let i = 0; i < 160; i++) {
+          const angle = (i / 160) * Math.PI * 2;
+          points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        const ring = new THREE.LineLoop(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({ color: PALETTES.aurora.b, transparent: true, opacity, depthWrite: false })
+        );
+        ring.rotation.set(tiltX, 0, tiltZ);
+        scene.add(ring);
+        orbitRings.push(ring);
+      }
+      addOrbitRing(2.75, 1.12, 0.35, 0.16);
+      addOrbitRing(3.35, 1.35, -0.5, 0.09);
+
+      const ui = {
+        controls: document.getElementById('controls'), pause: document.getElementById('pause'),
+        pauseLabel: document.getElementById('pause-label'), pauseIcon: document.getElementById('pause-icon'),
+        systemLabel: document.getElementById('system-label'), fps: document.getElementById('fps'),
+        shape: document.getElementById('shape'), bloom: document.getElementById('bloom'),
+        particles: document.getElementById('particles'), speed: document.getElementById('speed'),
+        scale: document.getElementById('scale'), wireframe: document.getElementById('wireframe'),
+        drift: document.getElementById('drift'), specimen: document.getElementById('specimen-name'),
+        particleStat: document.getElementById('particle-stat'), toast: document.getElementById('toast')
+      };
+      const rangeInputs = [ui.bloom, ui.particles, ui.speed, ui.scale];
+      let toastTimer;
+
+      function announce(message) {
+        ui.toast.textContent = message;
+        ui.toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => ui.toast.classList.remove('show'), 2400);
+      }
+
+      function paintRange(input) {
+        const fill = ((Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min))) * 100;
+        input.style.setProperty('--fill', `${fill}%`);
+        const output = document.getElementById(`${input.id}-value`);
+        output.textContent = input.id === 'particles' ? Number(input.value).toLocaleString() : `${Number(input.value).toFixed(2)}${input.id === 'bloom' ? '' : '×'}`;
+      }
+
+      function applyPalette(name) {
+        state.palette = name;
+        const palette = PALETTES[name];
+        paletteUniforms.uColorA.value.setHex(palette.a);
+        paletteUniforms.uColorB.value.setHex(palette.b);
+        paletteUniforms.uColorC.value.setHex(palette.c);
+        backgroundMaterial.uniforms.uTint.value.setHex(palette.b);
+        orbitRings.forEach((ring, index) => ring.material.color.setHex(index ? palette.accent : palette.b));
+        document.querySelectorAll('.palette-button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.palette === name)));
+      }
+
+      function applyShape(shape, force = false) {
+        if (force || state.shape !== shape) {
+          // Rebuilt forms release their old GPU buffers; shared material and particle buffers are reused.
+          hero.geometry.dispose();
+          hero.geometry = createHeroGeometry(shape);
+          state.shape = shape;
+        }
+        ui.shape.value = shape;
+        ui.specimen.textContent = shape === 'knot' ? 'THE AURORA KNOT' : 'THE ICOSAHEDRON';
+      }
+
+      function applyParticleCount(count) {
+        state.particles = count;
+        particleGeometry.setDrawRange(0, count);
+        ui.particleStat.textContent = `${count.toLocaleString()} PARTICLES`;
+      }
+
+      function syncPauseUI() {
+        document.body.classList.toggle('is-paused', state.paused);
+        ui.pause.setAttribute('aria-pressed', String(state.paused));
+        ui.pauseLabel.textContent = state.paused ? 'Resume' : 'Pause';
+        ui.pauseIcon.innerHTML = state.paused
+          ? '<path d="M5 3.5v9l7-4.5z"/>'
+          : '<rect x="4" y="3" width="3" height="10" rx="1"/><rect x="9" y="3" width="3" height="10" rx="1"/>';
+        ui.systemLabel.textContent = state.paused ? 'PAUSED' : 'SYSTEM LIVE';
+      }
+
+      function syncUI() {
+        ui.bloom.value = state.bloom;
+        ui.particles.value = state.particles;
+        ui.speed.value = state.speed;
+        ui.scale.value = state.scale;
+        ui.wireframe.checked = state.wireframe;
+        ui.drift.checked = state.drift;
+        rangeInputs.forEach(paintRange);
+        applyPalette(state.palette);
+        applyShape(state.shape);
+        applyParticleCount(state.particles);
+        bloomPass.strength = state.bloom;
+        heroMaterial.wireframe = state.wireframe;
+        hero.scale.setScalar(state.scale);
+        syncPauseUI();
+      }
+
+      const cameraState = { yaw: 0, pitch: 0.12, distance: 8.4, targetYaw: 0, targetPitch: 0.12, targetDistance: 8.4, dragYaw: 0, dragPitch: 0, mouseX: 0, mouseY: 0 };
+      const pointer = { active: false, id: null, x: 0, y: 0 };
+
+      function resetView() {
+        cameraState.dragYaw = 0;
+        cameraState.dragPitch = 0;
+        cameraState.mouseX = 0;
+        cameraState.mouseY = 0;
+        cameraState.targetDistance = 8.4;
+      }
+
+      function resetScene() {
+        Object.assign(state, DEFAULTS, { paused: reducedMotion });
+        applyShape(state.shape, true);
+        hero.rotation.set(0.35, -0.4, 0.18);
+        resetView();
+        syncUI();
+        announce('Scene restored to its original state.');
+      }
+
+      document.querySelectorAll('.palette-button').forEach(button => button.addEventListener('click', () => applyPalette(button.dataset.palette)));
+      ui.shape.addEventListener('change', () => applyShape(ui.shape.value));
+      ui.bloom.addEventListener('input', () => { state.bloom = Number(ui.bloom.value); bloomPass.strength = state.bloom; paintRange(ui.bloom); });
+      ui.particles.addEventListener('input', () => { applyParticleCount(Number(ui.particles.value)); paintRange(ui.particles); });
+      ui.speed.addEventListener('input', () => { state.speed = Number(ui.speed.value); paintRange(ui.speed); });
+      ui.scale.addEventListener('input', () => { state.scale = Number(ui.scale.value); hero.scale.setScalar(state.scale); paintRange(ui.scale); });
+      ui.wireframe.addEventListener('change', () => { state.wireframe = ui.wireframe.checked; heroMaterial.wireframe = state.wireframe; });
+      ui.drift.addEventListener('change', () => { state.drift = ui.drift.checked; });
+      ui.pause.addEventListener('click', () => { state.paused = !state.paused; syncPauseUI(); });
+      document.getElementById('reset').addEventListener('click', resetScene);
+      document.getElementById('randomize').addEventListener('click', () => {
+        const palettes = Object.keys(PALETTES);
+        state.palette = palettes[Math.floor(Math.random() * palettes.length)];
+        state.bloom = Math.round((0.7 + Math.random() * 1.1) * 20) / 20;
+        state.particles = 3000 + Math.floor(Math.random() * 15) * 500;
+        state.speed = Math.round((0.3 + Math.random() * 1.1) * 20) / 20;
+        state.scale = Math.round((0.85 + Math.random() * 0.3) * 100) / 100;
+        state.wireframe = false;
+        syncUI();
+        announce('A new composition is in orbit.');
+      });
+
+      function exportFrame() {
+        // Render immediately before reading the canvas so export works without preserveDrawingBuffer's ongoing cost.
+        composer.render();
+        const link = document.createElement('a');
+        link.download = `aurora-${state.palette}-${Date.now()}.png`;
+        link.href = renderer.domElement.toDataURL('image/png');
+        link.click();
+        announce('Frame exported as PNG.');
+      }
+      document.getElementById('export').addEventListener('click', exportFrame);
+
+      const canvas = renderer.domElement;
+      canvas.addEventListener('pointerdown', event => {
+        pointer.active = true;
+        pointer.id = event.pointerId;
+        pointer.x = event.clientX;
+        pointer.y = event.clientY;
+        canvas.setPointerCapture(event.pointerId);
+      });
+      canvas.addEventListener('pointermove', event => {
+        const rect = canvas.getBoundingClientRect();
+        // Separate horizontal and vertical sensitivity gives the mouse-driven orbit a natural, weighted feel.
+        cameraState.mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        cameraState.mouseY = ((event.clientY - rect.top) / rect.height) * 2 - 1;
+        if (pointer.active && event.pointerId === pointer.id) {
+          cameraState.dragYaw -= (event.clientX - pointer.x) * 0.005;
+          cameraState.dragPitch = THREE.MathUtils.clamp(cameraState.dragPitch + (event.clientY - pointer.y) * 0.004, -1.1, 1.1);
+          pointer.x = event.clientX;
+          pointer.y = event.clientY;
+        }
+      });
+      function endPointer(event) {
+        if (event.pointerId === pointer.id) { pointer.active = false; pointer.id = null; }
+      }
+      canvas.addEventListener('pointerup', endPointer);
+      canvas.addEventListener('pointercancel', endPointer);
+      canvas.addEventListener('pointerleave', () => { if (!pointer.active) { cameraState.mouseX = 0; cameraState.mouseY = 0; } });
+      canvas.addEventListener('wheel', event => {
+        event.preventDefault();
+        cameraState.targetDistance = THREE.MathUtils.clamp(cameraState.targetDistance + event.deltaY * 0.008, 5.5, 13);
+      }, { passive: false });
+      canvas.addEventListener('keydown', event => {
+        const step = 0.12;
+        if (event.key === 'ArrowLeft') cameraState.dragYaw += step;
+        else if (event.key === 'ArrowRight') cameraState.dragYaw -= step;
+        else if (event.key === 'ArrowUp') cameraState.dragPitch = Math.min(1.1, cameraState.dragPitch + step);
+        else if (event.key === 'ArrowDown') cameraState.dragPitch = Math.max(-1.1, cameraState.dragPitch - step);
+        else if (event.key === '+' || event.key === '=') cameraState.targetDistance = Math.max(5.5, cameraState.targetDistance - 0.5);
+        else if (event.key === '-') cameraState.targetDistance = Math.min(13, cameraState.targetDistance + 0.5);
+        else return;
+        event.preventDefault();
+      });
+      window.addEventListener('keydown', event => {
+        if (event.target.closest('input, select, button, a')) return;
+        if (event.code === 'Space') { event.preventDefault(); state.paused = !state.paused; syncPauseUI(); }
+        else if (event.key.toLowerCase() === 'r') resetScene();
+        else if (event.key.toLowerCase() === 'e') exportFrame();
+      });
+
+      function resize() {
+        const width = Math.max(1, stage.clientWidth);
+        const height = Math.max(1, stage.clientHeight);
+        const ratio = pixelRatio();
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(ratio);
+        renderer.setSize(width, height, false);
+        // Composer targets must track the canvas exactly, or bloom misaligns and the image stretches.
+        composer.setPixelRatio(ratio);
+        composer.setSize(width, height);
+        particleUniforms.uPixelRatio.value = ratio;
+        backgroundMaterial.uniforms.uAspect.value = camera.aspect;
+      }
+      window.addEventListener('resize', resize, { passive: true });
+      const resizeObserver = new ResizeObserver(resize);
+      resizeObserver.observe(stage);
+      resize();
+      syncUI();
+
+      let simulationTime = 0;
+      let raf = 0;
+      let lastTick = performance.now();
+      let accumulator = 0;
+      let fpsFrames = 0;
+      let fpsStart = lastTick;
+      let firstFrame = true;
+      let disposed = false;
+      const FRAME_INTERVAL = 1000 / 60;
+
+      function animate(now) {
+        if (disposed) return;
+        raf = requestAnimationFrame(animate);
+        accumulator += now - lastTick;
+        lastTick = now;
+        // Skip excess callbacks on 120/144 Hz displays while keeping one requestAnimationFrame loop.
+        if (accumulator < FRAME_INTERVAL) return;
+        const delta = Math.min(accumulator / 1000, 0.05);
+        accumulator %= FRAME_INTERVAL;
+
+        if (!state.paused) simulationTime += delta * state.speed;
+        heroUniforms.uTime.value = simulationTime;
+        particleUniforms.uTime.value = simulationTime;
+        if (!state.paused) {
+          hero.rotation.y += delta * 0.12 * state.speed;
+          hero.rotation.x += delta * 0.035 * state.speed;
+          orbitRings[0].rotation.y += delta * 0.025 * state.speed;
+          orbitRings[1].rotation.y -= delta * 0.018 * state.speed;
+        }
+
+        const drift = state.drift && !state.paused ? Math.sin(simulationTime * 0.08) * 0.12 : 0;
+        cameraState.targetYaw = cameraState.dragYaw + cameraState.mouseX * 0.35 + drift;
+        cameraState.targetPitch = THREE.MathUtils.clamp(cameraState.dragPitch - cameraState.mouseY * 0.22 + 0.12, -1.15, 1.15);
+        // Exponential damping is frame-rate independent, so the camera eases instead of snapping.
+        const damping = 1 - Math.exp(-delta * 4.5);
+        cameraState.yaw += (cameraState.targetYaw - cameraState.yaw) * damping;
+        cameraState.pitch += (cameraState.targetPitch - cameraState.pitch) * damping;
+        cameraState.distance += (cameraState.targetDistance - cameraState.distance) * damping;
+        const { yaw, pitch, distance } = cameraState;
+        camera.position.set(Math.sin(yaw) * Math.cos(pitch) * distance, Math.sin(pitch) * distance, Math.cos(yaw) * Math.cos(pitch) * distance);
+        camera.lookAt(0, 0, 0);
+        composer.render(delta);
+
+        if (firstFrame) {
+          firstFrame = false;
+          document.body.classList.add('is-ready');
+          loading.setAttribute('aria-hidden', 'true');
+          ui.controls.disabled = false;
+          ui.pause.disabled = false;
+          syncPauseUI();
+        }
+        fpsFrames++;
+        if (now - fpsStart >= 600) {
+          ui.fps.textContent = `${Math.round((fpsFrames * 1000) / (now - fpsStart))} FPS`;
+          fpsFrames = 0;
+          fpsStart = now;
+        }
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+        else if (!disposed && !raf) { lastTick = performance.now(); accumulator = 0; fpsStart = lastTick; fpsFrames = 0; raf = requestAnimationFrame(animate); }
+      });
+      window.addEventListener('pagehide', event => {
+        if (event.persisted) return;
+        // Release GPU resources and observers on a real unload; persisted pages keep their state for back/forward cache.
+        disposed = true;
+        cancelAnimationFrame(raf);
+        clearTimeout(toastTimer);
+        resizeObserver.disconnect();
+        scene.traverse(object => {
+          object.geometry?.dispose();
+          if (Array.isArray(object.material)) object.material.forEach(material => material.dispose());
+          else object.material?.dispose();
+        });
+        composer.passes.forEach(pass => pass.dispose?.());
+        composer.dispose();
+        renderer.dispose();
+      });
+      canvas.addEventListener('webglcontextlost', event => {
+        event.preventDefault();
+        cancelAnimationFrame(raf);
+        disposed = true;
+        document.body.classList.remove('is-ready');
+        loading.removeAttribute('aria-hidden');
+        showFallback(new Error('WebGL context lost'));
+      });
+
+      raf = requestAnimationFrame(animate);
+    }
+
+    boot().catch(showFallback);
+  </script>
+</body>
+</html>

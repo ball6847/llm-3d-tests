@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en" data-scene-state="loading">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Aurora Knot</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #e9fbff;
+      background: #01020a;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: #01020a;
+    }
+
+    body { user-select: none; }
+
+    #scene {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    /* CSS vignette sits above WebGL and keeps the bloom contrast high. */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 44%, transparent 34%, rgba(1, 2, 10, 0.42) 76%, rgba(0, 0, 4, 0.9) 100%);
+    }
+
+    #loader {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: radial-gradient(circle at 50% 45%, #0a1230 0%, #01020a 62%);
+      transition: opacity 900ms ease, visibility 900ms ease;
+    }
+
+    #loader.is-hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .loader__panel { text-align: center; }
+
+    .loader__ring {
+      width: 46px;
+      height: 46px;
+      margin: 0 auto 18px;
+      border: 1px solid rgba(120, 231, 255, 0.18);
+      border-top-color: #78e7ff;
+      border-radius: 50%;
+      box-shadow: 0 0 30px rgba(80, 230, 255, 0.2);
+      animation: spin 1.15s linear infinite;
+    }
+
+    .loader__title {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .loader__detail {
+      max-width: 34rem;
+      margin: 10px auto 0;
+      color: #8da6bd;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    #loader.is-error .loader__ring {
+      animation: none;
+      border-color: rgba(255, 124, 168, 0.35);
+      border-top-color: #ff7ca8;
+      transform: rotate(45deg);
+    }
+
+    #loader.is-error .loader__detail { color: #d5b0c3; }
+
+    .hud {
+      position: fixed;
+      left: clamp(18px, 4vw, 56px);
+      bottom: clamp(18px, 4vh, 48px);
+      z-index: 3;
+      display: grid;
+      gap: 5px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 900ms ease 250ms;
+    }
+
+    html[data-scene-state="ready"] .hud { opacity: 1; }
+
+    .hud__eyebrow {
+      color: #76edff;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.35em;
+      text-transform: uppercase;
+    }
+
+    .hud strong {
+      font-size: clamp(17px, 2vw, 24px);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+
+    .hud span:last-child {
+      color: #7891aa;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 600px) {
+      .hud { bottom: 22px; }
+      .hud span:last-child { max-width: 12rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .loader__ring { animation: none; }
+      #loader, .hud { transition-duration: 1ms; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="scene" role="img" aria-label="Interactive aurora torus knot with orbiting particles"></canvas>
+
+  <div id="loader" role="status" aria-live="polite">
+    <div class="loader__panel">
+      <div class="loader__ring" aria-hidden="true"></div>
+      <div class="loader__title" data-loader-message>Loading…</div>
+      <div class="loader__detail" data-loader-detail>Compiling procedural shaders</div>
+    </div>
+  </div>
+
+  <div class="hud" aria-hidden="true">
+    <span class="hud__eyebrow">Aurora / 01</span>
+    <strong>Procedural WebGL</strong>
+    <span>Move your pointer to orbit</span>
+  </div>
+
+  <script>
+    // The classic script stays alive if the module script or CDN import fails.
+    (() => {
+      const loader = document.getElementById("loader");
+      const message = loader.querySelector("[data-loader-message]");
+      const detail = loader.querySelector("[data-loader-detail]");
+
+      let loadTimer = window.setTimeout(() => {
+        if (document.documentElement.dataset.sceneState === "loading") {
+          window.__showSceneError("Three.js could not load. Check the network connection and reload.");
+        }
+      }, 12000);
+
+      window.__clearSceneLoadTimeout = () => window.clearTimeout(loadTimer);
+
+      window.__showSceneError = text => {
+        if (document.documentElement.dataset.sceneState === "ready") return;
+        window.__clearSceneLoadTimeout();
+        document.documentElement.dataset.sceneState = "error";
+        message.textContent = "Scene unavailable";
+        detail.textContent = text;
+        loader.classList.add("is-error");
+      };
+
+      window.addEventListener("error", event => {
+        const moduleFailed = event.target instanceof HTMLScriptElement ||
+          /failed to (fetch|resolve) module/i.test(event.message || "");
+        if (moduleFailed && document.documentElement.dataset.sceneState === "loading") {
+          window.__showSceneError("Three.js could not load. Check the network connection and reload.");
+        }
+      }, true);
+    })();
+  </script>
+
+  <!-- One pinned version keeps core and addon classes compatible. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+    import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+    import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+    import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+    const reportFatal = error => {
+      console.error("[aurora]", error);
+      window.__clearSceneLoadTimeout?.();
+      window.__showSceneError?.("WebGL could not start. Enable hardware acceleration or try a modern browser.");
+      window.__AURORA__?.dispose?.();
+    };
+
+    const boot = () => {
+      const canvas = document.getElementById("scene");
+      const loader = document.getElementById("loader");
+      const width = Math.max(1, window.innerWidth);
+      const height = Math.max(1, window.innerHeight);
+      const aspect = width / height;
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: false,
+        alpha: false,
+        powerPreference: "high-performance"
+      });
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 0.90;
+      renderer.setClearColor(0x01020a, 1);
+      // Cap DPR so a Retina screen does not quadruple the post-processing cost.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(width, height, false);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x01020a);
+
+      const camera = new THREE.PerspectiveCamera(46, aspect, 0.1, 100);
+      const radiusForAspect = value => value < 0.8 ? 13.0 : value < 1.2 ? 11.4 : 9.8;
+      let cameraRadius = radiusForAspect(aspect);
+      camera.position.set(0, 0, cameraRadius);
+      camera.lookAt(0, 0, 0);
+
+      // A dark inside-out sphere adds procedural color without a texture.
+      const backdropMaterial = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: /* glsl */`
+          varying vec3 vDirection;
+          void main() {
+            vDirection = normalize(position);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */`
+          uniform float uTime;
+          varying vec3 vDirection;
+          void main() {
+            float sweep = sin(vDirection.x * 9.0 + uTime * 0.08) *
+                          sin(vDirection.z * 7.0 - uTime * 0.06);
+            float belt = pow(1.0 - abs(vDirection.y), 3.0);
+            vec3 base = vec3(0.004, 0.006, 0.022);
+            vec3 mist = mix(vec3(0.012, 0.08, 0.14), vec3(0.10, 0.02, 0.16), 0.5 + 0.5 * sweep);
+            gl_FragColor = vec4(base + mist * belt * 0.16, 1.0);
+          }
+        `
+      });
+      const backdrop = new THREE.Mesh(new THREE.SphereGeometry(45, 48, 32), backdropMaterial);
+      backdrop.renderOrder = -1000;
+      backdrop.frustumCulled = false;
+      scene.add(backdrop);
+
+      // HDR colors stay above the bloom threshold. OutputPass maps the composite to sRGB.
+      const heroMaterial = new THREE.ShaderMaterial({
+        toneMapped: false,
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: /* glsl */`
+          uniform float uTime;
+          varying vec3 vNormal;
+          varying vec3 vViewDirection;
+          varying vec3 vWorldPosition;
+          varying float vWave;
+
+          void main() {
+            float pulse = 0.5 + 0.5 * sin(uTime * 1.7);
+            float wave = sin(position.x * 3.0 + uTime * 1.4) *
+                         cos(position.y * 2.6 - uTime * 1.1) *
+                         sin(position.z * 3.4 + uTime * 0.8);
+            vec3 displaced = position + normal * wave * (0.045 + pulse * 0.025);
+
+            vec4 worldPosition = modelMatrix * vec4(displaced, 1.0);
+            vec4 viewPosition = viewMatrix * worldPosition;
+
+            vNormal = normalize(normalMatrix * normal);
+            vViewDirection = normalize(-viewPosition.xyz);
+            vWorldPosition = worldPosition.xyz;
+            vWave = wave;
+            gl_Position = projectionMatrix * viewPosition;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          uniform float uTime;
+          varying vec3 vNormal;
+          varying vec3 vViewDirection;
+          varying vec3 vWorldPosition;
+          varying float vWave;
+
+          vec3 aurora(float t) {
+            return 0.34 + 0.34 * cos(6.2831853 * (vec3(0.0, 0.33, 0.67) + t));
+          }
+
+          void main() {
+            vec3 n = normalize(vNormal);
+            vec3 v = normalize(vViewDirection);
+            float rim = pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 2.2);
+            float pulse = 0.65 + 0.35 * sin(uTime * 1.8 + vWorldPosition.y * 1.2);
+            float bands = 0.5 + 0.5 * sin(vWorldPosition.y * 4.5 - uTime * 1.1 + vWave * 9.0);
+            float auroraBands = 0.5 + 0.5 * sin(vWorldPosition.y * 6.5 + vWorldPosition.x * 1.4 - uTime * 1.5 + vWave * 8.0);
+
+            // Time, surface position, and the displacement wave move the palette phase.
+            float shift = uTime * 0.10 + vWorldPosition.y * 0.10 + rim * 0.28 + bands * 0.16;
+            vec3 color = aurora(shift + auroraBands * 0.12);
+            color = mix(color, vec3(0.04, 0.48, 0.78), 0.16 + rim * 0.30);
+            color += vec3(0.38, 0.04, 0.72) * pow(rim, 2.0) * 0.50;
+
+            // Keep most of the surface below 1.0 so bloom reads the rim, not the whole mesh.
+            float emission = 0.70 + pulse * 0.22 + rim * 0.88 + bands * 0.12;
+            gl_FragColor = vec4(color * emission, 1.0);
+          }
+        `
+      });
+      const hero = new THREE.Mesh(new THREE.TorusKnotGeometry(1.45, 0.43, 320, 32, 2, 3), heroMaterial);
+      scene.add(hero);
+
+      const core = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.72, 1),
+        new THREE.MeshBasicMaterial({
+          color: new THREE.Color(0x72eaff).multiplyScalar(1.1),
+          wireframe: true,
+          transparent: true,
+          opacity: 0.08,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          toneMapped: false
+        })
+      );
+      scene.add(core);
+
+      const shellSource = new THREE.IcosahedronGeometry(3.15, 2);
+      const shellGeometry = new THREE.WireframeGeometry(shellSource);
+      shellSource.dispose();
+      const shell = new THREE.LineSegments(
+        shellGeometry,
+        new THREE.LineBasicMaterial({
+          color: new THREE.Color(0x5b6cff).multiplyScalar(0.9),
+          transparent: true,
+          opacity: 0.045,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          toneMapped: false
+        })
+      );
+      scene.add(shell);
+
+      const ringConfigs = [
+        { radius: 3.55, color: 0x48f4ff, x: 1.12, y: 0.10, speed: 0.045 },
+        { radius: 4.40, color: 0x9b6cff, x: 0.36, y: 1.18, speed: -0.032 },
+        { radius: 5.35, color: 0xff63c8, x: 1.48, y: 0.62, speed: 0.022 }
+      ];
+      const rings = ringConfigs.map((config, index) => {
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(config.radius, 0.011, 6, 220),
+          new THREE.MeshBasicMaterial({
+            color: new THREE.Color(config.color).multiplyScalar(1.05),
+            transparent: true,
+            opacity: 0.10,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            toneMapped: false
+          })
+        );
+        ring.userData = { ...config, index };
+        scene.add(ring);
+        return ring;
+      });
+
+      // One BufferGeometry and THREE.Points become one gl.POINTS draw call.
+      // The vertex shader moves every particle, so the CPU sends no new positions.
+      const PARTICLE_COUNT = 8500;
+      const positions = new Float32Array(PARTICLE_COUNT * 3);
+      const colors = new Float32Array(PARTICLE_COUNT * 3);
+      const sizes = new Float32Array(PARTICLE_COUNT);
+      const phases = new Float32Array(PARTICLE_COUNT);
+      const speeds = new Float32Array(PARTICLE_COUNT);
+      const twinkles = new Float32Array(PARTICLE_COUNT);
+
+      // A fixed seed makes the field composition repeat across reloads.
+      let seed = 0x9e3779b9;
+      const random = () => {
+        seed += 0x6d2b79f5;
+        let t = seed;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+
+      const tint = new THREE.Color();
+      for (let i = 0; i < PARTICLE_COUNT; i += 1) {
+        const i3 = i * 3;
+        const radius = 2.4 + Math.pow(random(), 0.62) * 7.1;
+        const angle = random() * Math.PI * 2;
+        const thin = 1.0 - 0.55 * (radius / 9.5);
+
+        positions[i3] = Math.cos(angle) * radius;
+        positions[i3 + 1] = (random() - 0.5) * 4.2 * thin + Math.sin(angle * 3.0) * 0.35;
+        positions[i3 + 2] = Math.sin(angle) * radius;
+
+        sizes[i] = 0.45 + Math.pow(random(), 2.0) * 1.35;
+        phases[i] = random() * Math.PI * 2;
+        speeds[i] = (0.045 + random() * 0.11) * (random() < 0.5 ? -1 : 1);
+        twinkles[i] = 0.6 + random() * 2.5;
+
+        tint.setHSL(0.50 + random() * 0.28, 0.86, 0.58 + random() * 0.16);
+        colors[i3] = tint.r * 1.25;
+        colors[i3 + 1] = tint.g * 1.25;
+        colors[i3 + 2] = tint.b * 1.25;
+      }
+
+      const particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      particleGeometry.setAttribute("aColor", new THREE.BufferAttribute(colors, 3));
+      particleGeometry.setAttribute("aSize", new THREE.BufferAttribute(sizes, 1));
+      particleGeometry.setAttribute("aPhase", new THREE.BufferAttribute(phases, 1));
+      particleGeometry.setAttribute("aSpeed", new THREE.BufferAttribute(speeds, 1));
+      particleGeometry.setAttribute("aTwinkle", new THREE.BufferAttribute(twinkles, 1));
+
+      const particleMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        depthTest: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+        uniforms: {
+          uTime: { value: 0 },
+          uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
+          uPointScale: { value: 3.8 },
+          uNearFade: { value: new THREE.Vector2(1.5, 5.0) },
+          uFarFade: { value: new THREE.Vector2(11.0, 19.0) }
+        },
+        vertexShader: /* glsl */`
+          uniform float uTime;
+          uniform float uPixelRatio;
+          uniform float uPointScale;
+          uniform vec2 uNearFade;
+          uniform vec2 uFarFade;
+
+          attribute vec3 aColor;
+          attribute float aSize;
+          attribute float aPhase;
+          attribute float aSpeed;
+          attribute float aTwinkle;
+
+          varying vec3 vColor;
+          varying float vAlpha;
+          varying float vTwinkle;
+
+          void main() {
+            float t = uTime * aSpeed + aPhase;
+            float c = cos(t);
+            float s = sin(t);
+
+            // Rotate the base position around Y. Different speeds create orbit shear.
+            vec3 orbit = vec3(
+              c * position.x - s * position.z,
+              position.y + sin(uTime * 0.35 + aPhase * 1.7) * 0.22,
+              s * position.x + c * position.z
+            );
+
+            vec4 worldPosition = modelMatrix * vec4(orbit, 1.0);
+            vec4 mvPosition = viewMatrix * worldPosition;
+
+            // cameraPosition is built in. Fade close and distant particles by world depth.
+            float cameraDistance = distance(cameraPosition, worldPosition.xyz);
+            float nearFade = smoothstep(uNearFade.x, uNearFade.y, cameraDistance);
+            float farFade = 1.0 - smoothstep(uFarFade.x, uFarFade.y, cameraDistance);
+            float depthFade = clamp(nearFade * farFade, 0.0, 1.0);
+            float twinkle = 0.65 + 0.35 * sin(uTime * aTwinkle + aPhase);
+            float perspective = 8.0 / max(1.0, -mvPosition.z);
+
+            // Size and alpha use the same depth term, so distant dust stays faint and small.
+            gl_PointSize = clamp(
+              aSize * uPointScale * uPixelRatio * perspective * (0.08 + 0.92 * depthFade) * twinkle,
+              0.0,
+              7.0 * uPixelRatio
+            );
+            vAlpha = depthFade * (0.22 + 0.30 * twinkle);
+            vColor = aColor * (0.50 + 0.28 * twinkle);
+            vTwinkle = twinkle;
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          varying vec3 vColor;
+          varying float vAlpha;
+          varying float vTwinkle;
+
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float disc = 1.0 - smoothstep(0.10, 0.50, d);
+            float core = 1.0 - smoothstep(0.0, 0.16, d);
+            if (disc < 0.001) discard;
+            vec3 color = vColor * (0.55 + core * 1.25 + vTwinkle * 0.18);
+            gl_FragColor = vec4(color, disc * vAlpha * 0.32);
+          }
+        `
+      });
+
+      const particles = new THREE.Points(particleGeometry, particleMaterial);
+      particles.frustumCulled = false;
+      scene.add(particles);
+
+      // RenderPass keeps the scene pass. UnrealBloomPass reads HDR bright pixels.
+      // OutputPass applies tone mapping and the display color space after the bloom composite.
+      const composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.85, 0.50, 0.85);
+      bloomPass.threshold = 0.85;
+      bloomPass.strength = 0.85;
+      bloomPass.radius = 0.50;
+      composer.addPass(bloomPass);
+      const outputPass = new OutputPass();
+      composer.addPass(outputPass);
+
+      const MOUSE_X_SENSITIVITY = 0.55;
+      const MOUSE_Y_SENSITIVITY = 0.34;
+      let targetYaw = 0;
+      let targetPitch = 0;
+      let yaw = 0;
+      let pitch = 0;
+
+      const onPointerMove = event => {
+        const nx = (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
+        const ny = (event.clientY / Math.max(1, window.innerHeight)) * 2 - 1;
+        // Both axes feed separate orbit angles, with a smaller vertical range.
+        targetYaw = nx * MOUSE_X_SENSITIVITY;
+        targetPitch = -ny * MOUSE_Y_SENSITIVITY;
+      };
+
+      const onBlur = () => {
+        targetYaw = 0;
+        targetPitch = 0;
+      };
+
+      const onResize = () => {
+        const w = Math.max(1, window.innerWidth);
+        const h = Math.max(1, window.innerHeight);
+        const dpr = Math.min(window.devicePixelRatio, 2);
+
+        // Resize changes buffers only. Rebuilding geometry here would create GPU garbage.
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(w, h, false);
+        composer.setPixelRatio(dpr);
+        composer.setSize(w, h);
+
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        cameraRadius = radiusForAspect(camera.aspect);
+
+        particleMaterial.uniforms.uPixelRatio.value = dpr;
+        particleMaterial.uniforms.uPointScale.value = 3.8 * THREE.MathUtils.clamp(h / 900, 0.75, 1.35);
+      };
+
+      const domController = new AbortController();
+      const { signal } = domController;
+      window.addEventListener("resize", onResize, { signal });
+      window.addEventListener("pointermove", onPointerMove, { passive: true, signal });
+      window.addEventListener("blur", onBlur, { signal });
+      window.addEventListener("pagehide", dispose, { once: true, signal });
+
+      onResize();
+
+      const FRAME_MS = 1000 / 60;
+      let animationId = 0;
+      let lastFrame = performance.now();
+      let elapsed = 0;
+      let frameCount = 0;
+      let firstFrameRendered = false;
+      let disposed = false;
+
+      // pagehide releases every GPU object. No rebuild path means no orphaned buffers.
+      function dispose() {
+        if (disposed) return;
+        disposed = true;
+        domController.abort();
+        cancelAnimationFrame(animationId);
+        window.__clearSceneLoadTimeout?.();
+
+        const geometries = new Set();
+        const materials = new Set();
+        scene.traverse(object => {
+          if (object.geometry) geometries.add(object.geometry);
+          if (object.material) {
+            const list = Array.isArray(object.material) ? object.material : [object.material];
+            list.forEach(material => materials.add(material));
+          }
+        });
+        geometries.forEach(geometry => geometry.dispose());
+        materials.forEach(material => material.dispose());
+
+        bloomPass.dispose?.();
+        outputPass.dispose?.();
+        composer.dispose?.();
+        renderer.dispose();
+        renderer.forceContextLoss?.();
+        renderer.domElement.remove();
+        scene.clear();
+        delete window.__AURORA__;
+      }
+
+      window.__AURORA__ = {
+        particleCount: PARTICLE_COUNT,
+        dispose,
+        get state() { return document.documentElement.dataset.sceneState; },
+        get frame() { return frameCount; },
+        get pixelRatio() { return renderer.getPixelRatio(); },
+        get cameraAspect() { return camera.aspect; },
+        get cameraPosition() { return camera.position.toArray().map(value => +value.toFixed(3)); },
+        get yawPitch() { return [+yaw.toFixed(3), +pitch.toFixed(3)]; },
+        get renderCalls() { return renderer.info.render.calls; },
+        get size() {
+          const value = new THREE.Vector2();
+          renderer.getSize(value);
+          return [value.x, value.y];
+        }
+      };
+
+      const tick = now => {
+        if (disposed) return;
+        animationId = requestAnimationFrame(tick);
+
+        if (document.hidden) {
+          lastFrame = now;
+          return;
+        }
+
+        const frameDelta = now - lastFrame;
+        // Modulo keeps the average near 60fps on 120Hz and 144Hz displays.
+        if (frameDelta < FRAME_MS) return;
+        lastFrame = now - (frameDelta % FRAME_MS);
+
+        const delta = Math.min(frameDelta / 1000, 0.05);
+        elapsed += delta;
+
+        heroMaterial.uniforms.uTime.value = elapsed;
+        particleMaterial.uniforms.uTime.value = elapsed;
+        backdropMaterial.uniforms.uTime.value = elapsed;
+
+        hero.rotation.x = elapsed * 0.08;
+        hero.rotation.y = elapsed * 0.13;
+        hero.rotation.z = Math.sin(elapsed * 0.22) * 0.08;
+
+        core.scale.setScalar(0.92 + 0.06 * Math.sin(elapsed * 1.9));
+        core.rotation.y = -elapsed * 0.16;
+        shell.rotation.x = 0.35 + Math.sin(elapsed * 0.17) * 0.08;
+        shell.rotation.y = elapsed * 0.03;
+
+        rings.forEach(ring => {
+          const data = ring.userData;
+          ring.rotation.x = data.x + Math.sin(elapsed * 0.12 + data.index) * 0.08;
+          ring.rotation.y = data.y + elapsed * data.speed;
+        });
+
+        // Exponential damping keeps mouse orbit smooth even when frame timing varies.
+        const damping = 1 - Math.exp(-delta * 3.4);
+        yaw = THREE.MathUtils.lerp(yaw, targetYaw, damping);
+        pitch = THREE.MathUtils.lerp(pitch, targetPitch, damping);
+        camera.position.set(
+          Math.sin(yaw) * cameraRadius * Math.cos(pitch),
+          Math.sin(pitch) * cameraRadius,
+          Math.cos(yaw) * cameraRadius * Math.cos(pitch)
+        );
+        camera.lookAt(0, 0, 0);
+
+        try {
+          composer.render(delta);
+          frameCount += 1;
+
+          if (!firstFrameRendered) {
+            firstFrameRendered = true;
+            document.documentElement.dataset.sceneState = "ready";
+            window.__RIPPLE_READY__ = true;
+            window.__clearSceneLoadTimeout?.();
+            loader.classList.add("is-hidden");
+            loader.setAttribute("aria-hidden", "true");
+          }
+        } catch (error) {
+          reportFatal(error);
+        }
+      };
+
+      animationId = requestAnimationFrame(tick);
+    };
+
+    try {
+      boot();
+    } catch (error) {
+      reportFatal(error);
+    }
+  </script>
+</body>
+</html>

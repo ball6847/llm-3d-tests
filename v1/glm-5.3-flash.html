@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Torus Knot — Three.js</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #030308; }
+  #scene { position: fixed; inset: 0; display: block; }
+  /* Loading overlay: gives instant visual feedback and hides the CDN/module
+     startup flash. Faded out (opacity transition) once the first frame renders. */
+  #loading {
+    position: fixed; inset: 0; z-index: 10; display: flex;
+    align-items: center; justify-content: center;
+    background: #030308; color: #9fd8ff;
+    font-family: system-ui, sans-serif; letter-spacing: 0.3em;
+    font-size: 14px; text-transform: uppercase;
+    transition: opacity 0.8s ease; pointer-events: none;
+  }
+  #loading.done { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="loading">Loading…</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }     from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+/* ------------------------------------------------------------------ */
+/* Renderer                                                            */
+/* ------------------------------------------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+// Cap pixel ratio at 2: on 3x Retina devices a full-res framebuffer wrecks the
+// GPU for no perceptible gain.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.domElement.id = 'scene';
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x030308, 0.055); // depth cue, also naturally fades far particles
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.2, 7);
+
+/* ------------------------------------------------------------------ */
+/* Hero object: torus knot with a custom iridescent shader             */
+/* ------------------------------------------------------------------ */
+const heroUniforms = {
+  uTime: { value: 0 } // drives the aurora pulse in the fragment shader
+};
+
+const heroMaterial = new THREE.ShaderMaterial({
+  uniforms: heroUniforms,
+  vertexShader: /* glsl */`
+    varying vec3 vNormal;
+    varying vec3 vViewDir;
+    varying vec3 vPos;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vViewDir = normalize(-mv.xyz);          // vector from surface to camera
+      vPos = position;
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform float uTime;
+    varying vec3 vNormal;
+    varying vec3 vViewDir;
+    varying vec3 vPos;
+
+    // Simple cosine palette (Iñigo Quilez): provably-bounded Rainbow-ish colors
+    // from a single scalar, cheap on the GPU, no texture needed.
+    vec3 palette(float t) {
+      return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67)));
+    }
+
+    void main() {
+      float fresnel = pow(1.0 - max(dot(normalize(vNormal), normalize(vViewDir)), 0.0), 2.5);
+      // Iridescence: hue flows over the surface using position + time.
+      float shift = vPos.x * 0.35 + vPos.y * 0.25 + uTime * 0.4;
+      vec3 iridescent = palette(shift);
+
+      // Pulse: a breathing glow synced to uTime.
+      float pulse = 0.75 + 0.45 * sin(uTime * 1.6);
+
+      vec3 color = iridescent * (0.35 + fresnel * 1.4) * pulse;
+      color += vec3(0.1, 0.05, 0.25) * fresnel; // violet rim light
+
+      // Boost values above 1 so UnrealBloomPass has something bright to bloom.
+      gl_FragColor = vec4(color * 1.25, 1.0);
+    }
+  `
+});
+
+const heroMesh = new THREE.Mesh(
+  new THREE.TorusKnotGeometry(1.5, 0.42, 220, 36),
+  heroMaterial
+);
+scene.add(heroMesh);
+
+/* ------------------------------------------------------------------ */
+/* Particle field: one BufferGeometry + Points, all particles live in  */
+/* a single gl.POINTS draw call. Sizes/opacities fade with distance to */
+/* the camera (computed in the vertex shader), never per-mesh.         */
+/* ------------------------------------------------------------------ */
+const PARTICLE_COUNT = 6000;
+const particleGeometry = new THREE.BufferGeometry();
+{
+  const positions  = new Float32Array(PARTICLE_COUNT * 3);
+  const seeds      = new Float32Array(PARTICLE_COUNT); // per-particle random phase
+  const radius     = new Float32Array(PARTICLE_COUNT);
+  const sizes      = new Float32Array(PARTICLE_COUNT); // small varied sprite sizes
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    // Distribute on a hollow shell band around the knot using spherical coords.
+    const r    = 4.5 + Math.random() * 6.0;
+    const theta= Math.random() * Math.PI * 2;
+    const phi  = Math.acos(2 * Math.random() - 1);
+    positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi) * 0.6;      // squash into a disc-like band
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    radius[i] = r;
+    seeds[i]  = Math.random() * Math.PI * 2;
+    sizes[i]  = 0.5 + Math.random() * 1.1; // mostly tiny stars, a few larger
+  }
+  particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  particleGeometry.setAttribute('aSeed',    new THREE.BufferAttribute(seeds, 1));
+  particleGeometry.setAttribute('aRadius',  new THREE.BufferAttribute(radius, 1));
+  particleGeometry.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
+}
+
+const particleMaterial = new THREE.ShaderMaterial({
+  transparent: true,
+  depthWrite: false,        // additive blend: correct look, avoids z-fighting sparkle
+  blending: THREE.AdditiveBlending,
+  uniforms: { uTime: { value: 0 }, uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) } },
+  vertexShader: /* glsl */`
+    uniform float uTime;
+    uniform float uPixelRatio;
+    attribute float aSeed;
+    attribute float aRadius;
+    attribute float aSize;
+    varying float vFade;
+
+    void main() {
+      // Orbit: rotate each particle around Y; speed falls off with radius
+      // (inner shell orbits faster — Keplerian feel).
+      float speed = 0.12 / aRadius * 8.0;
+      float angle = uTime * speed + aSeed;
+      vec3 p = position;
+      float c = cos(angle), s = sin(angle);
+      p.xz = mat2(c, -s, s, c) * p.xz;
+      p.y += sin(uTime * 0.5 + aSeed) * 0.35; // gentle vertical drift
+
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      float dist = -mv.z; // distance from camera along the view axis
+
+      // Depth-based size: closer particles are bigger (perspective style).
+      gl_PointSize = aSize * uPixelRatio * (10.0 / dist);
+      gl_Position = projectionMatrix * mv;
+
+      // Depth-based opacity: hard fade near the camera (avoid huge blobs)
+      // and toward the far plane (provides atmospheric depth).
+      vFade = smoothstep(1.5, 6.0, dist) * (1.0 - smoothstep(14.0, 22.0, dist));
+    }
+  `,
+  fragmentShader: /* glsl */`
+    varying float vFade;
+    void main() {
+      // Round sprite via discard on the square point quad.
+      vec2 uv = gl_PointCoord - 0.5;
+      if (dot(uv, uv) > 0.25) discard;
+      vec3 tint = mix(vec3(0.35, 0.65, 1.0), vec3(0.85, 0.45, 1.0), vFade);
+      gl_FragColor = vec4(tint, vFade * 0.55);
+    }
+  `
+});
+
+const particles = new THREE.Points(particleGeometry, particleMaterial);
+scene.add(particles);
+
+/* ------------------------------------------------------------------ */
+/* Post-processing: RenderPass -> UnrealBloomPass                      */
+/* ------------------------------------------------------------------ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.85,   // strength — hero shader outputs >1.0 values, these bloom visibly
+  0.5,    // radius
+  0.25    // threshold — near-black background stays dark
+);
+composer.addPass(bloomPass);
+
+/* ------------------------------------------------------------------ */
+/* Mouse-reactive orbit with damping (lerp, never snaps)               */
+/* ------------------------------------------------------------------ */
+const mouse = { x: 0, y: 0 };            // raw, updated by events
+const orbit = { theta: 0, phi: 0.2, r: 7 }; // actual smoothed orbit values
+const ORBIT_SENS_X = 0.9; // radians of horizontal swing at screen edge
+const ORBIT_SENS_Y = 0.5; // radians of vertical swing
+const DAMPING = 0.045;    // lerp factor per frame — lower = smoother/slower
+
+window.addEventListener('pointermove', (e) => {
+  // Normalize to -1..1 from screen center.
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
+});
+
+function updateCamera() {
+  // Target orbit angles from the mouse, scaled by sensitivity.
+  const targetTheta = mouse.x * ORBIT_SENS_X;
+  const targetPhi   = THREE.MathUtils.clamp(0.2 + mouse.y * ORBIT_SENS_Y, -0.9, 1.1);
+  // Damped follow: camera position eases toward the mouse-driven orbit,
+  // so the motion reads as smooth parallax instead of a snap.
+  orbit.theta += (targetTheta - orbit.theta) * DAMPING;
+  orbit.phi   += (targetPhi   - orbit.phi)   * DAMPING;
+  camera.position.set(
+    Math.sin(orbit.theta) * Math.cos(orbit.phi) * orbit.r,
+    Math.sin(orbit.phi) * orbit.r + 0.8,
+    Math.cos(orbit.theta) * Math.cos(orbit.phi) * orbit.r
+  );
+  camera.lookAt(0, 0, 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Resize: renderer, camera aspect and composer all must track size,   */
+/* otherwise the canvas stretches (distortion).                        */
+/* ------------------------------------------------------------------ */
+window.addEventListener('resize', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+  composer.setSize(w, h);
+  bloomPass.setSize(w, h);
+  particleMaterial.uniforms.uPixelRatio.value = Math.min(window.devicePixelRatio, 2);
+});
+
+/* ------------------------------------------------------------------ */
+/* Memory hygiene: dispose GPU resources on teardown and any time an   */
+/* object is rebuilt, so repeated page logic can't leak buffers.       */
+/* ------------------------------------------------------------------ */
+function disposeObject(obj) {
+  obj.geometry?.dispose();
+  (Array.isArray(obj.material) ? obj.material : [obj.material])
+    .forEach(m => m?.dispose());
+}
+window.addEventListener('beforeunload', () => {
+  disposeObject(heroMesh);
+  disposeObject(particles);
+  composer.dispose();
+});
+
+/* ------------------------------------------------------------------ */
+/* Animation loop: rAF capped at ~60fps                                */
+/* ------------------------------------------------------------------ */
+const FRAME_MIN_MS = 1000 / 60; // 60fps cap — on 120Hz+ monitors we skip
+let lastFrame = 0;
+let firstFrameDone = false;
+const clock = new THREE.Clock();
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  const elapsed = now - lastFrame;
+  if (elapsed < FRAME_MIN_MS - 1) return; // render at most once per 60Hz tick
+  lastFrame = now;
+
+  const t = clock.getElapsedTime();
+  heroUniforms.uTime.value = t;
+  particleMaterial.uniforms.uTime.value = t;
+
+  heroMesh.rotation.y = t * 0.15; // slow self-rotation sells the iridescent flow
+  heroMesh.rotation.x = Math.sin(t * 0.3) * 0.2;
+  particles.rotation.y = t * 0.02;
+
+  updateCamera();
+  composer.render(); // renderPass + bloom, not renderer.render
+
+  // Fade the loading overlay once the very first frame is actually on screen.
+  if (!firstFrameDone) {
+    firstFrameDone = true;
+    document.getElementById('loading').classList.add('done');
+  }
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0c11">
+<meta name="description" content="One Three.js prompt, sent to many models. Browse the raw renders side by side.">
+<title>3D scene bench</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='%237cd6c0' stroke-width='1.6'%3E%3Cellipse cx='12' cy='12' rx='9' ry='4'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='4' transform='rotate(60 12 12)'/%3E%3Cellipse cx='12' cy='12' rx='9' ry='4' transform='rotate(120 12 12)'/%3E%3C/g%3E%3C/svg%3E">
+</head>
+<body data-page="index">
+<a class="skip-link" href="#results">Skip to results</a>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="index.html" aria-label="3D scene bench, home">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="1.5">
+          <ellipse cx="12" cy="12" rx="9" ry="4"/>
+          <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(60 12 12)"/>
+          <ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(120 12 12)"/>
+        </g>
+      </svg>
+      <span>3D scene bench</span>
+    </a>
+    <fieldset class="version-switch">
+      <legend class="visually-hidden">Prompt version</legend>
+      <span class="version-switch-label" aria-hidden="true">Prompt</span>
+      <div class="version-options">
+        <label class="version-option">
+          <input type="radio" name="version" value="1" aria-label="Prompt v1" checked>
+          <span aria-hidden="true">v1</span>
+        </label>
+        <label class="version-option">
+          <input type="radio" name="version" value="2" aria-label="Prompt v2">
+          <span aria-hidden="true">v2</span>
+        </label>
+      </div>
+    </fieldset>
+  </div>
+</header>
+
+<main class="page" id="main">
+  <section class="prompt-section" aria-labelledby="prompt-heading">
+    <div class="section-head">
+      <h1 id="prompt-heading">Prompt v1</h1>
+      <p class="lede">One prompt, sent to every model below. Each card opens the model's raw HTML, untouched.</p>
+    </div>
+    <div class="prompt-panel">
+      <div class="prompt-toolbar">
+        <span class="prompt-file" id="prompt-file" translate="no">prompt-v1.txt</span>
+        <button type="button" class="btn btn-ghost" id="copy-prompt">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="12" height="12" rx="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          <span id="copy-label">Copy prompt</span>
+        </button>
+      </div>
+      <pre class="prompt-text" id="prompt-text" role="region" aria-label="Prompt text" tabindex="0" translate="no"></pre>
+    </div>
+    <p class="visually-hidden" role="status" id="copy-status"></p>
+  </section>
+
+  <section class="results-section" id="results" aria-labelledby="results-heading" tabindex="-1">
+    <div class="section-head results-head">
+      <h2 id="results-heading">Results</h2>
+      <span class="count" id="result-count" role="status"></span>
+    </div>
+    <ul class="grid" id="model-grid"></ul>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>Scenes run as-is and fetch Three.js from a CDN, so they need a network connection. Thumbnails are static captures of each render. File sizes are the raw HTML on disk.</p>
+</footer>
+
+<script src="prompts.js"></script>
+<script src="manifest.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

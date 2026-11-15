@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Aurora Knot &mdash; procedural Three.js scene</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; width: 100%;
+    background: #04050b; overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  /* The canvas is the whole viewport; the body background only shows before WebGL paints. */
+  canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---- Loading / fallback overlay -------------------------------------- */
+  #loader {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px;
+    background: radial-gradient(120% 90% at 50% 45%, #0b1024 0%, #05060e 55%, #020308 100%);
+    color: #b9c6ff;
+    transition: opacity 900ms ease, visibility 0s linear 900ms;
+    -webkit-user-select: none; user-select: none;
+  }
+  #loader.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  .ring {
+    width: 54px; height: 54px; border-radius: 50%;
+    border: 2px solid rgba(120,150,255,.18);
+    border-top-color: #6ee7ff;
+    border-right-color: #b06cff;
+    animation: spin 1.05s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loader .label { font-size: 13px; letter-spacing: .22em; text-transform: uppercase; opacity: .82; }
+  #loader .err {
+    max-width: 34rem; padding: 0 1.5rem; text-align: center;
+    font-size: 14px; line-height: 1.6; color: #ffb4c2; letter-spacing: .02em;
+  }
+  #loader .hint {
+    position: fixed; bottom: 26px; left: 0; right: 0; text-align: center;
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: rgba(185,198,255,.4);
+  }
+  /* Respect users who prefer reduced motion: the scene still renders, just calmer. */
+  @media (prefers-reduced-motion: reduce) { .ring { animation-duration: 3s; } }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="ring"></div>
+  <div class="label" id="loader-label">Loading&hellip;</div>
+  <div class="err" id="loader-err" hidden></div>
+  <div class="hint">Move the mouse to orbit &middot; press R to regenerate the particle field</div>
+</div>
+
+<!--
+  Classic (non-module) script runs first: if the ES module below never executes
+  (blocked CDN, offline, no WebGL), this watchdog swaps the spinner for a
+  readable error instead of leaving the user staring at "Loading…" forever.
+-->
+<script>
+  window.__SCENE_READY = false;
+  window.__SCENE_BOOT = false;   // set by the module script once it starts running
+
+  function showLoadError(title, detail) {
+    var err = document.getElementById('loader-err');
+    var label = document.getElementById('loader-label');
+    if (!err || !label) return;
+    label.textContent = title;
+    err.hidden = false;
+    err.textContent = detail;
+  }
+  window.__showLoadError = showLoadError;
+
+  window.addEventListener('error', function (e) {
+    if (window.__SCENE_READY) return;
+    var detail = window.__SCENE_BOOT
+      ? 'The scene started but could not finish initializing: ' + (e.message || 'unknown error')
+      : 'The Three.js module could not be loaded from the CDN: ' + (e.message || 'network error');
+    showLoadError('Unable to start', detail);
+  }, true);
+
+  setTimeout(function () {
+    if (window.__SCENE_READY) return;
+    if (window.__SCENE_BOOT) {
+      showLoadError('Unable to start',
+        'The scene started but never produced its first frame. The browser may have lost the WebGL context.');
+    } else {
+      showLoadError('Still loading',
+        'Three.js was not fetched from the CDN within 10s. Check your network connection or content blocker, then reload.');
+    }
+  }, 10000);
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module" onerror="window.__showLoadError &amp;&amp; window.__showLoadError('Unable to start', 'The Three.js module script failed to load from the CDN. Check your network connection or content blocker, then reload.')">
+window.__SCENE_BOOT = true;
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+/* ==========================================================================
+   0. Shared state
+   ========================================================================== */
+const container = document.body;
+const loader = document.getElementById('loader');
+
+const pointer = new THREE.Vector2(0, 0);   // current, damped
+const pointerTarget = new THREE.Vector2(0, 0); // raw mouse, normalized -1..1
+
+// Every rebuildable GPU resource is tracked here so we can free it explicitly
+// instead of relying on the garbage collector (WebGL memory is not GC'd).
+const disposables = [];
+const track = (obj) => { disposables.push(obj); return obj; };
+
+/* ==========================================================================
+   1. Renderer, scene, camera
+   ========================================================================== */
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({
+    antialias: true,
+    alpha: false,
+    powerPreference: 'high-performance'
+  });
+} catch (err) {
+  document.getElementById('loader-label').textContent = 'WebGL unavailable';
+  const box = document.getElementById('loader-err');
+  box.hidden = false;
+  box.textContent = 'This browser could not create a WebGL context: ' + err.message;
+  throw err;
+}
+
+// Cap the device pixel ratio at 2: Retina displays would otherwise render
+// 4x the fragments (huge GPU cost, no visible gain on a full-screen bloom scene).
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;      // filmic highlight roll-off
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04050b);
+
+const camera = new THREE.PerspectiveCamera(
+  55, window.innerWidth / window.innerHeight, 0.1, 200
+);
+camera.position.set(0, 0.6, 6.6);
+
+const FOCUS = new THREE.Vector3(0, 0, 0); // the camera always looks at the hero
+
+/* ==========================================================================
+   2. Backdrop: an inverted sphere with a procedural nebula gradient.
+      Cheap (one draw call) and gives the scene depth instead of flat black.
+   ========================================================================== */
+const backdrop = new THREE.Mesh(
+  track(new THREE.SphereGeometry(60, 48, 32)),
+  track(new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: /* glsl */`
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */`
+      uniform float uTime;
+      varying vec3 vDir;
+      // Cheap value noise - no textures, no external assets.
+      float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123); }
+      float noise(vec3 p){
+        vec3 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+                       mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                       mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      void main() {
+        float h = vDir.y * 0.5 + 0.5;
+        vec3 base = mix(vec3(0.008, 0.012, 0.035), vec3(0.03, 0.02, 0.06), h);
+        float n = noise(vDir * 3.0 + vec3(0.0, uTime * 0.012, uTime * 0.02));
+        float n2 = noise(vDir * 7.0 - vec3(uTime * 0.015));
+        vec3 neb = mix(vec3(0.02, 0.09, 0.16), vec3(0.12, 0.03, 0.16), n2);
+        // Kept dim on purpose: bright backdrop would trigger the bloom pass and
+        // wash the whole frame out.
+        vec3 col = base + neb * pow(n, 2.0) * 0.55;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `
+  }))
+);
+scene.add(backdrop);
+
+/* ==========================================================================
+   3. Hero object: torus knot with a custom aurora shader
+   ========================================================================== */
+const heroUniforms = {
+  uTime: { value: 0 },
+  uAmp: { value: 0.13 },          // surface displacement amplitude (keep < tube radius
+                                  // so the tube never folds through itself)
+  uColorA: { value: new THREE.Color('#23d5ff') },
+  uColorB: { value: new THREE.Color('#b06cff') },
+  uColorC: { value: new THREE.Color('#3dffc4') }
+};
+
+const heroMaterial = track(new THREE.ShaderMaterial({
+  uniforms: heroUniforms,
+  side: THREE.DoubleSide,
+  vertexShader: /* glsl */`
+    uniform float uTime;
+    uniform float uAmp;
+    varying vec3 vNormalW;
+    varying vec3 vViewDir;
+    varying vec2 vUv;
+    varying float vDisp;
+
+    float hash(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123); }
+    float noise(vec3 p){
+      vec3 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+                     mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                 mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                     mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+    }
+
+    void main() {
+      vUv = uv;
+      vec3 n = normalize(normal);
+
+      // Pulsating displacement along the normal: organic breathing surface.
+      float pulse = 1.0 + 0.18 * sin(uTime * 1.7);
+      float d = (noise(n * 3.2 + vec3(0.0, 0.0, uTime * 0.32)) - 0.5) * uAmp;
+      d += (noise(n * 11.0 - vec3(uTime * 0.22)) - 0.5) * uAmp * 0.30; // fine detail
+      d *= 0.65 + 0.35 * sin(uTime * 0.8 + vUv.x * 6.2831);
+
+      vec3 pos = position + n * d * pulse;
+      vDisp = d;
+
+      vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+      vViewDir = normalize(-mv.xyz);                 // view-space direction to camera
+      vNormalW = normalize(normalMatrix * n);        // normal in view space
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform float uTime;
+    uniform vec3 uColorA;
+    uniform vec3 uColorB;
+    uniform vec3 uColorC;
+    varying vec3 vNormalW;
+    varying vec3 vViewDir;
+    varying vec2 vUv;
+    varying float vDisp;
+
+    // Iridescent cosine palette (IQ): saturated rainbow cycling from a hue.
+    vec3 palette(float t) {
+      return 0.5 + 0.5 * cos(6.28318 * (vec3(t) + vec3(0.0, 0.33, 0.67)));
+    }
+
+    void main() {
+      vec3 N = normalize(vNormalW);
+      vec3 V = normalize(vViewDir);
+      // Fresnel: rim-on/rim-off term, the main driver of the iridescent look.
+      float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 3.0);
+
+      // Aurora bands travelling along the surface.
+      float band  = sin(vUv.y * 26.0 + uTime * 1.4 + vUv.x * 9.0) * 0.5 + 0.5;
+      float ribbon = smoothstep(0.32, 1.0, band);
+      float swirl  = sin(vUv.x * 12.0 - uTime * 0.9 + vDisp * 22.0) * 0.5 + 0.5;
+
+      // Blinn-Phong style specular streak: gives the surface a wet, glossy
+      // read so it does not look like flat plastic.
+      vec3 L = normalize(vec3(0.6, 0.8, 0.5));
+      vec3 H = normalize(L + V);
+      float spec = pow(max(dot(N, H), 0.0), 48.0);
+
+      // Thin-film interference: the hue shifts with the view angle.
+      vec3 irid = palette(0.10 + 0.34 * swirl + 0.10 * sin(uTime * 0.35) + fres * 0.55);
+      irid = mix(irid, uColorA, 0.10 + 0.18 * fres);
+      irid = mix(irid, uColorB, ribbon * 0.38);
+      irid = mix(irid, uColorC, fres * 0.16);
+
+      // Emissive values above 1.0 are what UnrealBloomPass turns into glow.
+      // The body stays dark on purpose so only the rim and the ribbons glow.
+      float emissive = 0.03 + 1.35 * fres + 0.60 * ribbon * (0.5 + 0.5 * swirl) + 0.45 * spec;
+      gl_FragColor = vec4(irid * emissive + vec3(0.45, 0.70, 1.0) * spec * 0.25, 1.0);
+    }
+  `
+}));
+
+const heroGeo = track(new THREE.TorusKnotGeometry(1.9, 0.32, 420, 64, 2, 3));
+const hero = new THREE.Mesh(heroGeo, heroMaterial);
+scene.add(hero);
+
+/* -- Inner core: a glowing wireframe icosahedron cage --------------------
+   A solid core reads as a grey blob behind the knot; a wireframe cage keeps
+   the centre interesting without blocking the shape of the hero.          */
+const core = new THREE.Mesh(
+  track(new THREE.IcosahedronGeometry(0.95, 1)),
+  track(new THREE.ShaderMaterial({
+    transparent: true,
+    wireframe: true,               // render triangle edges only
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color('#5fd8ff') } },
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      varying vec3 vN;
+      varying vec3 vV;
+      void main() {
+        vN = normalize(normalMatrix * normal);
+        // Slight breathing scale so the core pulses with the hero.
+        float s = 1.0 + 0.07 * sin(uTime * 2.3);
+        vec4 mv = modelViewMatrix * vec4(position * s, 1.0);
+        vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      uniform float uTime;
+      uniform vec3 uColor;
+      varying vec3 vN;
+      varying vec3 vV;
+      void main() {
+        float fres = pow(1.0 - clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0), 1.6);
+        float pulse = 0.75 + 0.25 * sin(uTime * 2.0);
+        // Bright at the silhouette, translucent head-on so the cage reads as
+        // a wire shell rather than a solid ball.
+        float a = (0.18 + 0.70 * fres);
+        gl_FragColor = vec4(uColor * (0.5 + 1.6 * fres) * pulse, a * 0.55);
+      }
+    `
+  }))
+);
+scene.add(core);
+
+/* ==========================================================================
+   4. Particle field: thousands of points in a single BufferGeometry
+      (gl.POINTS) - one draw call instead of thousands of meshes.
+   ========================================================================== */
+const PARTICLE_COUNT = 12000;
+const particleUniforms = {
+  uTime: { value: 0 },
+  uPixelRatio: { value: renderer.getPixelRatio() }
+};
+
+let particles = null;
+
+function buildParticles(count) {
+  if (particles) {
+    // Dispose the previous GPU buffers before replacing them (no leaks on rebuild).
+    scene.remove(particles);
+    particles.geometry.dispose();
+    particles.material.dispose();
+    const i = disposables.indexOf(particles.geometry);
+    if (i >= 0) disposables.splice(i, 1);
+    const j = disposables.indexOf(particles.material);
+    if (j >= 0) disposables.splice(j, 1);
+  }
+
+  const positions = new Float32Array(count * 3);
+  const aRadius = new Float32Array(count);
+  const aTheta = new Float32Array(count);
+  const aSpeed = new Float32Array(count);
+  const aHeight = new Float32Array(count);
+  const aInc = new Float32Array(count);
+  const aSize = new Float32Array(count);
+  const aTwinkle = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    // Shell distribution: sqrt keeps the volume density even instead of
+    // clumping everything in the center.
+    const radius = 2.4 + Math.pow(Math.random(), 0.6) * 5.4;
+    aRadius[i] = radius;
+    aTheta[i] = Math.random() * Math.PI * 2;
+    aSpeed[i] = (0.12 + Math.random() * 0.42) * (Math.random() < 0.5 ? -1 : 1);
+    aHeight[i] = (Math.random() * 2 - 1) * (0.4 + radius * 0.18);
+    aInc[i] = (Math.random() * 2 - 1) * 1.15;   // orbit plane tilt
+    aSize[i] = 0.7 + Math.random() * 1.9;
+    aTwinkle[i] = Math.random() * Math.PI * 2;
+    // The base position is unused (the vertex shader computes the orbit) but
+    // Three.js requires a 'position' attribute with the right item size.
+    positions[i * 3] = 0;
+    positions[i * 3 + 1] = 0;
+    positions[i * 3 + 2] = 0;
+  }
+
+  const geo = track(new THREE.BufferGeometry());
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aRadius', new THREE.BufferAttribute(aRadius, 1));
+  geo.setAttribute('aTheta', new THREE.BufferAttribute(aTheta, 1));
+  geo.setAttribute('aSpeed', new THREE.BufferAttribute(aSpeed, 1));
+  geo.setAttribute('aHeight', new THREE.BufferAttribute(aHeight, 1));
+  geo.setAttribute('aInc', new THREE.BufferAttribute(aInc, 1));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1));
+  geo.setAttribute('aTwinkle', new THREE.BufferAttribute(aTwinkle, 1));
+  // Precompute a bounding sphere: without it Three.js frustum-culls the whole
+  // cloud every frame and it can pop out of view.
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 9);
+
+  const mat = track(new THREE.ShaderMaterial({
+    uniforms: particleUniforms,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      uniform float uPixelRatio;
+      attribute float aRadius;
+      attribute float aTheta;
+      attribute float aSpeed;
+      attribute float aHeight;
+      attribute float aInc;
+      attribute float aSize;
+      attribute float aTwinkle;
+      varying float vAlpha;
+      varying vec3 vColor;
+
+      void main() {
+        // Orbit in the vertex shader: zero CPU work per particle per frame.
+        float ang = aTheta + uTime * aSpeed;
+        float r   = aRadius + sin(uTime * 0.6 + aTwinkle) * 0.18;
+        vec3 p = vec3(cos(ang) * r, aHeight * 0.22, sin(ang) * r);
+
+        // Per-particle inclination tilts each orbit plane, so the cloud reads
+        // as a 3D swarm instead of one flat ring.
+        float ci = cos(aInc), si = sin(aInc);
+        p = vec3(p.x, p.y * ci - p.z * si, p.y * si + p.z * ci);
+
+        // Slow precession of the whole cloud around Y for a swirl effect.
+        float ca = cos(uTime * 0.06), sa = sin(uTime * 0.06);
+        p = vec3(p.x * ca - p.z * sa, p.y, p.x * sa + p.z * ca);
+
+        vec4 mv = modelViewMatrix * vec4(p, 1.0);
+        float dist = -mv.z;                       // distance in front of the camera
+
+        // Depth-based fade: particles very close to the lens fade out (they
+        // would otherwise be huge blurry blobs), distant ones fade with depth.
+        float near = smoothstep(0.8, 3.2, dist);
+        float far  = 1.0 - smoothstep(13.0, 27.0, dist);
+        vAlpha = near * far;
+
+        // Size attenuates with distance (perspective-correct point size) and
+        // is scaled by the pixel ratio so points stay crisp on HiDPI screens.
+        gl_PointSize = aSize * uPixelRatio * (58.0 / max(dist, 0.001));
+        gl_PointSize = clamp(gl_PointSize, 0.5, 9.0);
+
+        // Twinkle + depth-graded color.
+        float tw = 0.55 + 0.45 * sin(uTime * 2.2 + aTwinkle);
+        vAlpha *= tw * 0.55 * (1.0 - 0.35 * clamp(aSize / 2.6, 0.0, 1.0));
+        vColor = mix(vec3(0.10, 0.55, 1.0), vec3(0.70, 0.18, 1.0), 0.5 + 0.5 * sin(aTwinkle + uTime * 0.2));
+        vColor *= 0.30 + 0.45 * tw;
+
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      varying float vAlpha;
+      varying vec3 vColor;
+      void main() {
+        // Soft round sprite from gl_PointCoord - no texture needed.
+        vec2 c = gl_PointCoord - 0.5;
+        float d = length(c);
+        float mask = smoothstep(0.5, 0.06, d);
+        if (mask <= 0.001) discard;
+        gl_FragColor = vec4(vColor, mask * vAlpha);
+      }
+    `
+  }));
+
+  particles = new THREE.Points(geo, mat);
+  particles.frustumCulled = false;
+  scene.add(particles);
+}
+
+buildParticles(PARTICLE_COUNT);
+
+/* ==========================================================================
+   5. Post-processing: EffectComposer + RenderPass + UnrealBloomPass
+   ========================================================================== */
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(renderer.getPixelRatio());
+composer.setSize(window.innerWidth, window.innerHeight);
+
+composer.addPass(new RenderPass(scene, camera));
+
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.85,   // strength - how much the bright pixels bleed
+  0.50,   // radius   - spread of the glow
+  0.80    // threshold - only pixels brighter than this bloom
+);
+composer.addPass(bloomPass);
+
+// OutputPass applies tone mapping + sRGB conversion at the end of the chain,
+// because the composer renders into a linear-space HDR buffer.
+composer.addPass(new OutputPass());
+
+/* ==========================================================================
+   6. Mouse-reactive camera (damped, never snaps)
+   ========================================================================== */
+const CAM_RADIUS = 6.9;
+let azimuth = 0;              // current
+let polar = Math.PI / 2;      // current
+let azimuthTarget = 0;
+let polarTarget = Math.PI / 2;
+let idleSpin = 0;             // gentle auto-rotation so the scene lives on its own
+
+function onPointerMove(e) {
+  // Normalize to -1..1 so the response is resolution independent.
+  pointerTarget.set(
+    (e.clientX / window.innerWidth) * 2 - 1,
+    -((e.clientY / window.innerHeight) * 2 - 1)
+  );
+}
+window.addEventListener('pointermove', onPointerMove, { passive: true });
+window.addEventListener('pointerleave', () => pointerTarget.set(0, 0), { passive: true });
+
+/* ==========================================================================
+   7. Resize handling
+   ========================================================================== */
+function onResize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();      // keep the projection matrix in sync
+
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // re-cap on DPR change
+  renderer.setSize(w, h);
+
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(w, h);
+  // EffectComposer.setSize already forwards the (pixel-ratio scaled) size to
+  // every pass, so the bloom mip chain stays in sync automatically.
+
+  particleUniforms.uPixelRatio.value = renderer.getPixelRatio();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+/* ==========================================================================
+   8. Keyboard: rebuild the particle field (exercises the dispose path)
+   ========================================================================== */
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R') {
+    buildParticles(PARTICLE_COUNT);
+  }
+});
+
+/* ==========================================================================
+   9. Animation loop
+   ========================================================================== */
+const clock = new THREE.Clock();
+const FRAME_MS = 1000 / 60;   // hard cap at ~60fps
+let last = performance.now();
+let firstFrameDone = false;
+let frames = 0;   // rendered-frame counter (useful for verifying the 60fps cap)
+
+function animate() {
+  requestAnimationFrame(animate);   // next frame is always scheduled first
+
+  const now = performance.now();
+  const elapsed = now - last;
+  // Skip rendering if we woke up too early: keeps the GPU at ~60fps max even
+  // on 120Hz displays, and protects the bloom pass from extra fullscreen work.
+  if (elapsed < FRAME_MS - 1) return;
+  last = now - (elapsed % FRAME_MS);
+
+  const dt = Math.min(clock.getDelta(), 0.05); // clamp dt so a tab switch doesn't jump
+
+  // --- uniforms ---
+  const t = clock.elapsedTime;
+  heroUniforms.uTime.value = t;
+  particleUniforms.uTime.value = t;
+  backdrop.material.uniforms.uTime.value = t;
+  core.material.uniforms.uTime.value = t;
+
+  // --- mouse-driven orbit with exponential damping (frame-rate independent) ---
+  pointer.x += (pointerTarget.x - pointer.x) * (1 - Math.exp(-4.0 * dt));
+  pointer.y += (pointerTarget.y - pointer.y) * (1 - Math.exp(-4.0 * dt));
+
+  idleSpin += dt * 0.06;                       // slow constant drift
+  azimuthTarget = pointer.x * 0.75 + idleSpin;   // horizontal sensitivity
+  // Vertical: pointer.y is +1 at the top of the screen, and a smaller polar
+  // angle means the camera sits higher, so the sign is inverted here.
+  polarTarget = Math.PI / 2 - pointer.y * 0.42;
+
+  const damp = 1 - Math.exp(-3.2 * dt);       // smooth approach, never a snap
+  azimuth += (azimuthTarget - azimuth) * damp;
+  polar += (polarTarget - polar) * damp;
+  polar = THREE.MathUtils.clamp(polar, 0.35, Math.PI - 0.35);
+
+  const sp = Math.sin(polar);
+  camera.position.set(
+    FOCUS.x + CAM_RADIUS * sp * Math.sin(azimuth),
+    FOCUS.y + CAM_RADIUS * Math.cos(polar),
+    FOCUS.z + CAM_RADIUS * sp * Math.cos(azimuth)
+  );
+  camera.lookAt(FOCUS);
+
+  // --- object motion ---
+  hero.rotation.y += dt * 0.18;
+  hero.rotation.x = Math.sin(t * 0.21) * 0.25;
+  core.rotation.y -= dt * 0.4;
+  core.rotation.x += dt * 0.22;
+
+  composer.render();
+  frames++;
+
+  if (!firstFrameDone) {
+    firstFrameDone = true;
+    window.__SCENE_READY = true;
+    // Fade the overlay out only after a frame is actually on screen.
+    requestAnimationFrame(() => {
+      loader.classList.add('hidden');
+      setTimeout(() => loader.remove(), 1200);
+    });
+  }
+}
+
+animate();
+
+// Debug handle: lets you tweak live params from the console (e.g.
+// __app.bloomPass.strength = 0.4). Harmless in production.
+window.__app = { scene, camera, renderer, composer, bloomPass, heroUniforms, particleUniforms, hero, core, get frames() { return frames; } };
+
+/* ==========================================================================
+   10. Cleanup - free GPU resources when the page goes away
+   ========================================================================== */
+function disposeAll() {
+  for (const obj of disposables) {
+    if (obj && typeof obj.dispose === 'function') obj.dispose();
+  }
+  disposables.length = 0;
+  bloomPass.dispose();       // the composer does not dispose its passes for us
+  composer.dispose();
+  renderer.dispose();
+}
+window.addEventListener('pagehide', disposeAll);
+window.addEventListener('beforeunload', disposeAll);
+</script>
+</body>
+</html>

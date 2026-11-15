@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<meta name="description" content="Aurora Knot — a procedural Three.js light study. One shader, nine thousand particles, no assets." />
+<title>Aurora Knot — a procedural light study</title>
+<link rel="icon" href="data:," />
+
+<!--
+  Aurora Knot — one self-contained file, no build step.
+  Run over HTTP (ES modules are blocked on file://):
+      python3 -m http.server 8000
+  Three.js via CDN import map is the only network request; everything else is code.
+-->
+
+<style>
+  :root {
+    --bg: #05070c;
+    --panel: rgba(9, 13, 21, 0.62);
+    --border: rgba(150, 180, 255, 0.14);
+    --text: #e9eef7;
+    --dim: #93a1b6;
+    --accent: #7ce7ff;   /* aurora cyan   */
+    --accent2: #b18cff;  /* aurora violet */
+    --accent3: #7dffb2;  /* aurora mint   */
+    --radius: 14px;
+    --blur: blur(16px) saturate(1.25);
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #scene {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none; /* pointer drags orbit; they don't scroll the page */
+  }
+
+  /* ---------- interface chrome ---------- */
+
+  #ui {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none; /* gestures fall through to the canvas except on panels */
+  }
+
+  .panel {
+    position: absolute;
+    background: var(--panel);
+    -webkit-backdrop-filter: var(--blur); /* separation from the moving scene behind */
+    backdrop-filter: var(--blur);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 34px rgba(0, 0, 0, 0.38);
+    padding: 14px 16px;
+    pointer-events: auto;
+  }
+
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  #title-card { top: 18px; left: 18px; max-width: 320px; }
+  #title-card h1 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 650;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+  }
+  .grad {
+    background: linear-gradient(90deg, var(--accent), var(--accent2) 55%, var(--accent3));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  #title-card p { margin: 6px 0 0; font-size: 12px; color: var(--dim); }
+
+  #telemetry { top: 18px; right: 18px; min-width: 158px; }
+  .trow {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 2px 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .trow span { color: var(--dim); }
+  .trow b { font-weight: 500; }
+
+  #controls { left: 18px; bottom: 18px; width: 266px; }
+  #controls h2 { position: relative; padding-right: 28px; }
+
+  .ctl { margin-bottom: 12px; }
+  .ctl-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .ctl-head label { font-size: 12px; letter-spacing: 0.02em; }
+  .ctl-head output {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] {
+    width: 100%;
+    margin: 0;
+    accent-color: var(--accent); /* native slider, themed: keyboard support for free */
+    cursor: pointer;
+  }
+  input[type="range"]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+
+  .toggles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    margin: 2px 0 12px;
+  }
+  .switch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .switch input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+  }
+  .switch .track {
+    flex: none;
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    position: relative;
+    transition: background 0.2s ease;
+  }
+  .switch .track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #dfe7f5;
+    transition: transform 0.2s ease;
+  }
+  /* role="switch" + :checked means state is announced, not just colored */
+  .switch input:checked + .track {
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+  .switch input:checked + .track::after { transform: translateX(14px); }
+  .switch input:focus-visible + .track {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row button { flex: 1; }
+
+  button {
+    font: inherit;
+    font-size: 11.5px;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.11); }
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--dim);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+
+  .hint {
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 16px;
+    padding: 9px 14px;
+    font-size: 11px;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+  .hint span { display: flex; align-items: center; gap: 6px; }
+
+  #sheet-close {
+    display: none;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 0 7px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  #fab {
+    display: none;
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    pointer-events: auto;
+    color: var(--accent);
+  }
+
+  #ghost {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 15;
+    opacity: 0.4;
+  }
+  #ghost:hover, #ghost:focus-visible { opacity: 1; }
+
+  body.ui-hidden #ui { display: none; }
+
+  /* ---------- loader / error ---------- */
+
+  #loader {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    transition: opacity 0.6s ease, visibility 0s linear 0.6s;
+  }
+  #loader.done {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  .load-card { width: 240px; text-align: center; }
+  .load-mark {
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .load-bar {
+    height: 2px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  #load-fill {
+    height: 100%;
+    width: 6%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width 0.3s ease;
+  }
+  #load-msg {
+    margin-top: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+  }
+
+  #error {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(5, 7, 12, 0.85);
+  }
+  #error[hidden] { display: none; }
+  .error-card { max-width: 440px; position: static; }
+  .error-card h1 { margin: 0 0 8px; font-size: 16px; letter-spacing: 0.04em; }
+  .error-card p { margin: 0 0 10px; font-size: 13px; color: var(--dim); }
+
+  /* ---------- phone: the scene keeps the screen, controls live in a sheet ---------- */
+
+  @media (max-width: 900px) {
+    .hint { display: none; }
+  }
+
+  @media (max-width: 720px) {
+    #telemetry, .hint { display: none; }
+    #title-card { top: 12px; left: 12px; max-width: 58vw; padding: 10px 14px; }
+    #title-card p { display: none; }
+    #controls {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      max-height: 66vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: 18px 18px 0 0;
+      transform: translateY(105%);
+      transition: transform 0.34s cubic-bezier(0.32, 0.72, 0.24, 1);
+    }
+    body.sheet-open #controls { transform: translateY(0); }
+    #fab { display: flex; }
+    /* with the sheet open the × closes it; hiding the FAB keeps it off the sheet's buttons */
+    body.sheet-open #fab { display: none; }
+    #btn-hide { display: none; } /* no H key on touch; the fab/ghost are the way back */
+    #sheet-close { display: block; }
+    #ghost { bottom: 76px; } /* clear of the fab */
+  }
+
+  .noscript {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    z-index: 200;
+    font-size: 14px;
+    color: var(--dim);
+  }
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script>
+  // Boot watchdog: if the module below never signals ready, say why instead of
+  // leaving a spinner running forever. Runs before the module (which is deferred).
+  (function () {
+    var shown = false;
+    function showError(title, msg) {
+      if (shown) return;
+      shown = true;
+      window.__auroraFailed = true;
+      var loader = document.getElementById('loader');
+      if (loader) loader.classList.add('done');
+      var box = document.getElementById('error');
+      if (box) {
+        document.getElementById('error-title').textContent = title;
+        document.getElementById('error-msg').textContent = msg;
+        box.hidden = false;
+      }
+    }
+    window.__auroraShowError = showError;
+    window.__auroraReady = false;
+    window.__auroraFailed = false;
+    setTimeout(function () {
+      if (!window.__auroraReady && !window.__auroraFailed) {
+        if (location.protocol === 'file:') {
+          showError('Serve this file over HTTP',
+            'ES modules are blocked on file://. Run a local server, for example "python3 -m http.server", and open the page through that.');
+        } else {
+          showError('Still waiting for Three.js',
+            'The Three.js CDN could not be reached, or WebGL is not available in this browser. Check your connection and browser settings, then reload.');
+        }
+      }
+    }, 12000);
+  })();
+</script>
+</head>
+
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- loading state: stage-based progress tied to real milestones, not a decorative spinner -->
+  <div id="loader" role="status">
+    <div class="load-card">
+      <div class="load-mark">Aurora Knot</div>
+      <div class="load-bar"><div id="load-fill"></div></div>
+      <div id="load-msg">Waiting for Three.js…</div>
+    </div>
+  </div>
+
+  <div id="error" hidden>
+    <div class="error-card panel">
+      <h1 id="error-title">Something went wrong</h1>
+      <p id="error-msg"></p>
+      <p style="font-size:12px">The scene is fully procedural — there are no assets to download. If the problem persists, try another browser or network.</p>
+    </div>
+  </div>
+
+  <noscript><div class="noscript">This scene needs JavaScript and WebGL.</div></noscript>
+
+  <div id="ui">
+    <header class="panel" id="title-card">
+      <h1>Aurora <span class="grad">Knot</span></h1>
+      <p>A procedural light study — one shader, nine thousand particles, no assets.</p>
+    </header>
+
+    <!-- aria-hidden: the numbers change twice a second; too noisy to be a live region -->
+    <aside class="panel" id="telemetry" aria-hidden="true" aria-label="Live telemetry">
+      <h2>Telemetry</h2>
+      <div class="trow"><span>fps</span><b id="t-fps">—</b></div>
+      <div class="trow"><span>particles</span><b id="t-count">—</b></div>
+      <div class="trow"><span>dist</span><b id="t-dist">—</b></div>
+      <div class="trow"><span>hue</span><b id="t-hue">—</b></div>
+    </aside>
+
+    <section class="panel" id="controls" aria-label="Scene controls">
+      <h2>Controls <button id="sheet-close" type="button" aria-label="Close controls">×</button></h2>
+
+      <div class="ctl">
+        <div class="ctl-head"><label for="c-str">Bloom strength</label><output id="o-str">0.75</output></div>
+        <input id="c-str" type="range" min="0" max="2.5" step="0.01" value="0.75" />
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="c-thr">Bloom threshold</label><output id="o-thr">0.72</output></div>
+        <input id="c-thr" type="range" min="0" max="1" step="0.01" value="0.72" />
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="c-spd">Particle speed</label><output id="o-spd">1.00</output></div>
+        <input id="c-spd" type="range" min="0" max="3" step="0.01" value="1" />
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="c-hue">Hue shift</label><output id="o-hue">0°</output></div>
+        <input id="c-hue" type="range" min="0" max="1" step="0.005" value="0" />
+      </div>
+      <div class="ctl">
+        <div class="ctl-head"><label for="c-sens">Mouse sensitivity</label><output id="o-sens">1.00</output></div>
+        <input id="c-sens" type="range" min="0.2" max="2.5" step="0.05" value="1" />
+      </div>
+
+      <div class="toggles">
+        <label class="switch"><input type="checkbox" id="t-bloom" role="switch" checked /><span class="track" aria-hidden="true"></span><span>Bloom</span></label>
+        <label class="switch"><input type="checkbox" id="t-particles" role="switch" checked /><span class="track" aria-hidden="true"></span><span>Particles</span></label>
+        <label class="switch"><input type="checkbox" id="t-pause" role="switch" /><span class="track" aria-hidden="true"></span><span>Pause</span></label>
+      </div>
+
+      <div class="btn-row">
+        <button id="btn-reset" type="button">Reset view</button>
+        <button id="btn-hide" type="button">Hide UI <kbd>H</kbd></button>
+      </div>
+    </section>
+
+    <div class="panel hint" id="hint">
+      <span><kbd>move</kbd> orbit</span>
+      <span><kbd>scroll</kbd> zoom</span>
+      <span><kbd>H</kbd> hide interface</span>
+    </div>
+
+    <button id="fab" type="button" aria-expanded="false" aria-controls="controls" aria-label="Toggle controls panel">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <line x1="4" y1="7" x2="20" y2="7"></line>
+        <circle cx="9" cy="7" r="2.4" fill="#0b0f16"></circle>
+        <line x1="4" y1="15" x2="20" y2="15"></line>
+        <circle cx="15" cy="15" r="2.4" fill="#0b0f16"></circle>
+      </svg>
+    </button>
+  </div>
+
+  <button id="ghost" type="button" hidden>Show interface <kbd>H</kbd></button>
+
+<script type="module">
+  import * as THREE from 'three';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+  // ---------- loader ----------
+
+  const loaderEl = document.getElementById('loader');
+  const loadFill = document.getElementById('load-fill');
+  const loadMsg = document.getElementById('load-msg');
+  const setStage = (pct, msg) => {
+    loadFill.style.width = pct + '%';
+    loadMsg.textContent = msg;
+  };
+
+  // Probe WebGL before creating a renderer: failure should read as words, not a stuck spinner.
+  function webglOK() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+    } catch (err) {
+      return false;
+    }
+  }
+
+  if (!webglOK()) {
+    window.__auroraShowError('WebGL is unavailable',
+      'This scene needs WebGL, and the browser refused to provide a context. Try enabling hardware acceleration or updating the browser.');
+    throw new Error('WebGL unavailable');
+  }
+
+  setStage(20, 'Creating renderer…');
+
+  // ---------- shared parameters (UI writes, scene reads) ----------
+
+  const params = {
+    bloomStrength: 0.75,
+    bloomThreshold: 0.72,
+    particleSpeed: 1.0,
+    hue: 0.0,
+    sensitivity: 1.0,
+    paused: false,
+  };
+
+  const BASE_PITCH = 0.18;
+  const BASE_DIST = 7.6;
+  const MIN_DIST = 3.4;
+  const MAX_DIST = 13.0;
+
+  // Horizontal and vertical orbit reach are separate; vertical is deliberately gentler.
+  const SENS_X = 1.5;
+  const SENS_Y = 0.55;
+
+  // ---------- renderer / scene / camera ----------
+
+  const canvas = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+  // DPR cap at 2: the bloom chain runs fullscreen, and 3x+ panels would multiply that pixel cost.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.95;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070c);
+
+  const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 120);
+
+  // ---------- hero: torus knot with a hand-written aurora shader ----------
+
+  const HERO_VERT = /* glsl */`
+    uniform float uTime;
+    uniform float uDisplace;
+
+    varying vec3 vNormal;
+    varying vec3 vViewDir;
+    varying vec3 vPos;
+    varying float vWave;
+
+    // Layered trig noise: cheap and continuous, fine for slow breathing displacement.
+    float wave(vec3 p, float t) {
+      float a = sin(p.x * 1.6 + t * 0.9);
+      float b = sin(p.y * 2.2 - t * 0.7);
+      float c = sin(p.z * 1.8 + t * 0.5);
+      float d = sin((p.x + p.y + p.z) * 1.1 + t * 0.6);
+      return (a * b + c * d) * 0.5;
+    }
+
+    void main() {
+      float n = wave(position * 1.3, uTime);
+      vWave = n;
+      vec3 pos = position + normal * n * uDisplace;
+
+      vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+      vNormal = normalize(normalMatrix * normal);
+      vViewDir = -mv.xyz; // view-space direction to camera, for fresnel
+      vPos = pos;
+      gl_Position = projectionMatrix * mv;
+    }
+  `;
+
+  const HERO_FRAG = /* glsl */`
+    uniform float uTime;
+    uniform float uHue;
+
+    varying vec3 vNormal;
+    varying vec3 vViewDir;
+    varying vec3 vPos;
+    varying float vWave;
+
+    // Cosine palette: one phase shift per channel, so hue slides smoothly across the surface.
+    vec3 pal(float t) {
+      return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67)));
+    }
+
+    void main() {
+      vec3 N = normalize(vNormal);
+      vec3 V = normalize(vViewDir);
+      float ndv = clamp(dot(N, V), 0.0, 1.0);
+      float fres = pow(1.0 - ndv, 2.2);
+
+      // Hue travels across the surface via the wave value and height, plus time and user shift.
+      float t = vWave * 0.45 + vPos.y * 0.18 + uTime * 0.045 + uHue;
+      vec3 base = pal(t);
+
+      vec3 col = base * (0.14 + 0.62 * ndv);
+      col += fres * pal(t + 0.13) * 1.05; // rim runs >1 so the bloom pass catches it
+      col += smoothstep(0.62, 0.98, vWave) * vec3(0.95, 0.9, 1.15); // bright crests
+
+      // Dither keeps the dark gradients from banding once tone mapping crushes them.
+      float dith = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      col += (dith - 0.5) / 255.0;
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `;
+
+  const heroGeo = new THREE.TorusKnotGeometry(1.05, 0.34, 280, 40);
+  const heroMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uHue: { value: params.hue },
+      uDisplace: { value: 0.06 },
+    },
+    vertexShader: HERO_VERT,
+    fragmentShader: HERO_FRAG,
+  });
+  const hero = new THREE.Mesh(heroGeo, heroMat);
+  scene.add(hero);
+  setStage(48, 'Shaping the knot…');
+
+  // ---------- particle field: one BufferGeometry, all motion on the GPU ----------
+
+  const COUNT = 9000;
+  const positions = new Float32Array(COUNT * 3);
+  const seeds = new Float32Array(COUNT);
+  const scales = new Float32Array(COUNT);
+
+  for (let i = 0; i < COUNT; i++) {
+    // Rejection-sample a sphere direction, squash Y: a galactic disc with a gap around the knot.
+    let x = 0, y = 0, z = 0, l = 2;
+    while (l > 1 || l < 1e-3) {
+      x = Math.random() * 2 - 1; y = Math.random() * 2 - 1; z = Math.random() * 2 - 1;
+      l = Math.sqrt(x * x + y * y + z * z);
+    }
+    const r = 2.3 + Math.pow(Math.random(), 1.6) * 6.0;
+    positions[i * 3]     = (x / l) * r;
+    positions[i * 3 + 1] = (y / l) * r * 0.42;
+    positions[i * 3 + 2] = (z / l) * r;
+    seeds[i] = Math.random();
+    scales[i] = 0.4 + Math.pow(Math.random(), 2) * 1.6; // many small, few large
+  }
+
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  pGeo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+  pGeo.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
+
+  const PARTICLE_VERT = /* glsl */`
+    attribute float aSeed;
+    attribute float aScale;
+
+    uniform float uTime;
+    uniform float uSpeed;
+    uniform float uSize;
+    uniform float uPixelRatio;
+
+    varying float vSeed;
+    varying float vFade;
+
+    void main() {
+      vec3 p = position;
+      float r = length(p.xz);
+      // Differential rotation: inner particles sweep faster, like an accretion disc.
+      // All orbit math lives here so the CPU never touches 9k positions per frame.
+      float ang = uTime * uSpeed * (0.10 + 0.22 * aSeed) * (2.4 / (0.8 + r));
+      float c = cos(ang);
+      float s = sin(ang);
+      p.xz = mat2(c, s, -s, c) * p.xz;
+      p.y += sin(uTime * (0.3 + aSeed * 0.5) + aSeed * 6.28318) * 0.35;
+
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      float dist = max(-mv.z, 0.001);
+
+      gl_PointSize = clamp(uSize * aScale * uPixelRatio * (14.0 / dist), 0.75, 14.0 * uPixelRatio);
+
+      // Distance drives both size and opacity: near = big and bright, far = small and faded.
+      vFade = (1.0 - smoothstep(6.0, 26.0, dist)) * smoothstep(1.6, 3.6, dist) * 0.85;
+      vSeed = aSeed;
+      gl_Position = projectionMatrix * mv;
+    }
+  `;
+
+  const PARTICLE_FRAG = /* glsl */`
+    uniform float uHue;
+    uniform float uOpacity;
+
+    varying float vSeed;
+    varying float vFade;
+
+    vec3 pal(float t) {
+      return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67)));
+    }
+
+    void main() {
+      float d = length(gl_PointCoord - vec2(0.5));
+      float alpha = 1.0 - smoothstep(0.08, 0.5, d);
+      vec3 col = pal(vSeed * 0.7 + uHue) * 0.75;
+      gl_FragColor = vec4(col, alpha * vFade * uOpacity);
+    }
+  `;
+
+  const pMat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uSpeed: { value: params.particleSpeed },
+      uSize: { value: 0.9 },
+      uOpacity: { value: 0.6 },
+      uHue: { value: params.hue },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+    },
+    vertexShader: PARTICLE_VERT,
+    fragmentShader: PARTICLE_FRAG,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const points = new THREE.Points(pGeo, pMat);
+  points.frustumCulled = false; // positions move in the shader; CPU bounds would be stale
+  scene.add(points);
+  setStage(72, 'Seeding the field…');
+
+  // ---------- post processing: bloom is the whole point of the bright rims ----------
+
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(window.innerWidth, window.innerHeight),
+    params.bloomStrength, 0.15, params.bloomThreshold
+  );
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass()); // tone mapping + sRGB, once, at the end of the chain
+  setStage(88, 'Wiring the bloom…');
+
+  // ---------- camera rig: damped orbit + damped zoom ----------
+
+  const rig = {
+    yaw: 0.9, pitch: 0.35, dist: 11.0, // start wide; eases into the base framing
+    tYaw: 0, tPitch: BASE_PITCH, tDist: BASE_DIST,
+  };
+
+  let lastMove = performance.now();
+
+  function onPointerMove(e) {
+    lastMove = performance.now();
+    const nx = (e.clientX / window.innerWidth) * 2 - 1;
+    const ny = (e.clientY / window.innerHeight) * 2 - 1;
+    rig.tYaw = nx * SENS_X * params.sensitivity;
+    rig.tPitch = THREE.MathUtils.clamp(-ny * SENS_Y * params.sensitivity, -1.1, 1.1);
+  }
+  window.addEventListener('pointermove', onPointerMove);
+
+  function onWheel(e) {
+    if (e.ctrlKey) return; // leave browser pinch-zoom alone
+    e.preventDefault();
+    const d = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    // Proportional zoom feels the same at any distance; damping below keeps it jerk-free.
+    rig.tDist = THREE.MathUtils.clamp(rig.tDist * Math.exp(d * 0.0011), MIN_DIST, MAX_DIST);
+  }
+  window.addEventListener('wheel', onWheel, { passive: false });
+
+  // ---------- interface wiring ----------
+
+  function bindSlider(id, outId, fmt, apply) {
+    const el = document.getElementById(id);
+    const out = document.getElementById(outId);
+    el.addEventListener('input', () => {
+      const v = parseFloat(el.value);
+      out.textContent = fmt(v);
+      apply(v);
+    });
+  }
+
+  bindSlider('c-str', 'o-str', v => v.toFixed(2), v => { params.bloomStrength = v; bloomPass.strength = v; });
+  bindSlider('c-thr', 'o-thr', v => v.toFixed(2), v => { params.bloomThreshold = v; bloomPass.threshold = v; });
+  bindSlider('c-spd', 'o-spd', v => v.toFixed(2), v => { params.particleSpeed = v; pMat.uniforms.uSpeed.value = v; });
+  bindSlider('c-hue', 'o-hue', v => Math.round(v * 360) + '°', v => {
+    params.hue = v;
+    heroMat.uniforms.uHue.value = v;
+    pMat.uniforms.uHue.value = v;
+  });
+  bindSlider('c-sens', 'o-sens', v => v.toFixed(2), v => { params.sensitivity = v; });
+
+  function bindToggle(id, apply) {
+    const el = document.getElementById(id);
+    el.addEventListener('change', () => apply(el.checked));
+    return el;
+  }
+  bindToggle('t-bloom', v => { bloomPass.enabled = v; });
+  bindToggle('t-particles', v => { points.visible = v; });
+  const pauseToggle = bindToggle('t-pause', v => { params.paused = v; });
+
+  const uiEl = document.getElementById('ui');
+  const ghostBtn = document.getElementById('ghost');
+  const hideBtn = document.getElementById('btn-hide');
+  const fab = document.getElementById('fab');
+
+  function setUiHidden(hidden) {
+    document.body.classList.toggle('ui-hidden', hidden);
+    document.body.classList.remove('sheet-open');
+    fab.setAttribute('aria-expanded', 'false');
+    ghostBtn.hidden = !hidden;
+    // Move focus to the control that reverses the action, so keyboard/AT users aren't dropped.
+    const mobile = window.matchMedia('(max-width: 720px)').matches;
+    const target = hidden ? (mobile ? fab : ghostBtn) : (mobile ? fab : hideBtn);
+    target.focus({ preventScroll: true });
+  }
+
+  hideBtn.addEventListener('click', () => setUiHidden(true));
+  ghostBtn.addEventListener('click', () => setUiHidden(false));
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    rig.tYaw = 0;
+    rig.tPitch = BASE_PITCH;
+    rig.tDist = BASE_DIST;
+  });
+
+  fab.addEventListener('click', () => {
+    const open = document.body.classList.toggle('sheet-open');
+    fab.setAttribute('aria-expanded', String(open));
+  });
+  document.getElementById('sheet-close').addEventListener('click', () => {
+    document.body.classList.remove('sheet-open');
+    fab.setAttribute('aria-expanded', 'false');
+  });
+
+  function onKey(e) {
+    const t = document.activeElement;
+    const tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return; // don't hijack control keys
+    const clamp = THREE.MathUtils.clamp;
+    switch (e.key) {
+      case 'h':
+      case 'H':
+        setUiHidden(!document.body.classList.contains('ui-hidden'));
+        break;
+      case '+':
+      case '=':
+        rig.tDist = clamp(rig.tDist * 0.9, MIN_DIST, MAX_DIST);
+        break;
+      case '-':
+      case '_':
+        rig.tDist = clamp(rig.tDist * 1.1, MIN_DIST, MAX_DIST);
+        break;
+      case 'ArrowLeft':  rig.tYaw -= 0.18; e.preventDefault(); break;
+      case 'ArrowRight': rig.tYaw += 0.18; e.preventDefault(); break;
+      case 'ArrowUp':    rig.tPitch = clamp(rig.tPitch - 0.12, -1.1, 1.1); e.preventDefault(); break;
+      case 'ArrowDown':  rig.tPitch = clamp(rig.tPitch + 0.12, -1.1, 1.1); e.preventDefault(); break;
+      case 'p':
+      case 'P':
+        pauseToggle.checked = !pauseToggle.checked;
+        pauseToggle.dispatchEvent(new Event('change'));
+        break;
+      case 'Escape':
+        document.body.classList.remove('sheet-open');
+        break;
+    }
+  }
+  window.addEventListener('keydown', onKey);
+
+  // ---------- resize: camera, renderer and post chain must move together ----------
+
+  function onResize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    // The composer owns the render targets, so it needs the resize too — otherwise bloom smears.
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(w, h);
+    pMat.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+  }
+  window.addEventListener('resize', onResize);
+
+  // ---------- failure state + teardown ----------
+
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    window.__auroraShowError('Graphics context lost',
+      'The GPU dropped the WebGL context — usually after a driver reset. Reload the page to restart the scene.');
+  });
+
+  let tornDown = false;
+  function teardown() {
+    if (tornDown) return;
+    tornDown = true;
+    cancelAnimationFrame(rafId);
+    window.removeEventListener('resize', onResize);
+    window.removeEventListener('wheel', onWheel);
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('keydown', onKey);
+    // Three.js keeps GPU buffers alive until told otherwise.
+    heroGeo.dispose();
+    heroMat.dispose();
+    pGeo.dispose();
+    pMat.dispose();
+    if (bloomPass.dispose) bloomPass.dispose();
+    if (composer.dispose) composer.dispose();
+    renderer.dispose();
+    renderer.forceContextLoss();
+  }
+  window.addEventListener('pagehide', teardown);
+
+  // ---------- telemetry ----------
+
+  const tFps = document.getElementById('t-fps');
+  const tDist = document.getElementById('t-dist');
+  const tHue = document.getElementById('t-hue');
+  document.getElementById('t-count').textContent = COUNT.toLocaleString('en-US');
+
+  // ---------- frame loop ----------
+
+  let sceneTime = 0;
+  let frames = 0;
+  let fpsAccum = 0;
+  let firstFrame = true;
+  let rafId = 0;
+  let last = performance.now();
+
+  function step(dt, now) {
+    if (!params.paused) sceneTime += dt;
+
+    hero.rotation.y = sceneTime * 0.12;
+    hero.rotation.x = Math.sin(sceneTime * 0.06) * 0.18;
+    heroMat.uniforms.uTime.value = sceneTime;
+    pMat.uniforms.uTime.value = sceneTime;
+
+    // Frame-rate independent damping: fast scroll or pointer flicks never snap.
+    const kRot = 1 - Math.exp(-dt * 5.0);
+    const kZoom = 1 - Math.exp(-dt * 4.0);
+    rig.yaw += (rig.tYaw - rig.yaw) * kRot;
+    rig.pitch += (rig.tPitch - rig.pitch) * kRot;
+    rig.dist += (rig.tDist - rig.dist) * kZoom;
+
+    // Idle ambient: after a few still seconds the camera takes a slow breath on its own.
+    const idle = THREE.MathUtils.clamp((now - lastMove - 3000) / 5000, 0, 1);
+    const ambYaw = idle * 0.22 * Math.sin(now * 0.00011);
+    const ambPitch = idle * 0.07 * Math.sin(now * 0.000083 + 1.7);
+
+    const yaw = rig.yaw + ambYaw;
+    const pitch = THREE.MathUtils.clamp(rig.pitch + ambPitch, -1.2, 1.2);
+    const cp = Math.cos(pitch);
+    camera.position.set(
+      rig.dist * cp * Math.sin(yaw),
+      rig.dist * Math.sin(pitch),
+      rig.dist * cp * Math.cos(yaw)
+    );
+    camera.lookAt(0, 0, 0);
+  }
+
+  function animate(now) {
+    rafId = requestAnimationFrame(animate);
+    // ~60fps cap: high-refresh displays fire rAF faster than that.
+    if (now - last < 1000 / 60) return;
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+
+    step(dt, now);
+    composer.render();
+
+    if (firstFrame) {
+      firstFrame = false;
+      window.__auroraReady = true;
+      loaderEl.classList.add('done'); // fade out once the first frame is really on screen
+      setTimeout(() => loaderEl.remove(), 800);
+    }
+
+    frames++;
+    fpsAccum += dt;
+    if (fpsAccum >= 0.5) {
+      tFps.textContent = Math.round(frames / fpsAccum);
+      tDist.textContent = rig.dist.toFixed(2);
+      tHue.textContent = Math.round(params.hue * 360) + '°';
+      frames = 0;
+      fpsAccum = 0;
+    }
+  }
+
+  setStage(96, 'First light…');
+  rafId = requestAnimationFrame(animate);
+</script>
+</body>
+</html>

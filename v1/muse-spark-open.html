@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurora Knot — Iridescent Torus Knot</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#05070d;font-family:'Inter',system-ui,-apple-system,sans-serif}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block}
+  /* Loading overlay */
+  #loader{
+    position:fixed;inset:0;z-index:20;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(120% 120% at 50% 40%, #0e1a33 0%, #05070d 55%, #020308 100%);
+    transition:opacity .9s ease, visibility .9s;
+  }
+  #loader.hide{opacity:0;visibility:hidden;pointer-events:none}
+  .loader-ring{
+    width:48px;height:48px;border:2px solid rgba(120,180,255,.15);
+    border-top-color:#7af0ff;border-radius:50%;
+    animation:spin .85s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #loader p{
+    margin-top:16px;color:#8fb4ff;letter-spacing:.22em;font-size:10px;text-transform:uppercase;opacity:.9
+  }
+  #loader .sub{margin-top:6px;color:#5a6a8a;letter-spacing:.12em;font-size:9px;text-transform:none}
+  /* HUD */
+  #hud{
+    position:fixed;z-index:5;inset:auto 0 0 0;
+    pointer-events:none;
+    display:flex;justify-content:space-between;align-items:flex-end;
+    padding:18px 20px;
+  }
+  .hud-card{
+    background:rgba(10,16,32,.55);backdrop-filter:blur(14px) saturate(1.2);
+    border:1px solid rgba(120,170,255,.14);border-radius:14px;
+    padding:12px 16px;min-width:160px;
+  }
+  .hud-card h1{
+    font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#a8c6ff;font-weight:700;
+  }
+  .hud-card h1 span{color:#5ef0d0}
+  .hud-card p{font-size:10px;color:#7a8db5;margin-top:4px;line-height:1.5}
+  .hud-right{
+    text-align:right;background:rgba(10,16,32,.35);border-color:rgba(120,170,255,.08);
+    min-width:0;padding:10px 14px;
+  }
+  .hud-right b{color:#cfe0ff;font-weight:600;font-size:10px;letter-spacing:.08em}
+  .hud-right small{color:#6a7fa8;font-size:9px}
+  .dot{width:6px;height:6px;border-radius:50%;background:#3ef0c8;display:inline-block;box-shadow:0 0 8px #3ef0c8;vertical-align:middle;margin-right:6px;animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+  /* Top bar */
+  #topbar{
+    position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:5;
+    display:flex;gap:8px;align-items:center;
+    background:rgba(10,16,32,.5);backdrop-filter:blur(14px);border:1px solid rgba(120,170,255,.12);
+    border-radius:999px;padding:6px 8px 6px 14px;
+  }
+  #topbar span{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#8fb4ff;font-weight:600}
+  #topbar button{
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:#d8e6ff;background:rgba(95,180,255,.14);border:1px solid rgba(95,180,255,.22);
+    padding:6px 12px;border-radius:999px;cursor:pointer;transition:.2s;
+  }
+  #topbar button:hover{background:rgba(95,180,255,.26)}
+  #topbar button.active{background:#d8e6ff;color:#0a1020;border-color:#d8e6ff}
+  /* vignette */
+  #vignette{
+    position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:radial-gradient(85% 85% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%),
+               linear-gradient(to top, rgba(2,4,10,.55) 0%, transparent 35%);
+  }
+  @media(max-width:640px){
+    #hud{flex-direction:column;align-items:stretch;gap:8px;padding:12px}
+    .hud-card{min-width:0}
+    #topbar{top:10px;padding:5px 6px 5px 12px}
+    #topbar span{font-size:9px}
+  }
+</style>
+<!-- es-module-shims for importmap support in all browsers -->
+<script async src="https://unpkg.com/es-module-shims@1.8.2/dist/es-module-shims.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- Loading overlay: fades out after first frame so user knows init succeeded -->
+<div id="loader">
+  <div class="loader-ring"></div>
+  <p>Loading — Aurora Knot</p>
+  <div class="sub">compiling shaders · building particles</div>
+</div>
+
+<div id="vignette"></div>
+
+<div id="topbar">
+  <span>◈ Aurora Knot</span>
+  <button id="btnBloom" class="active">Bloom ON</button>
+  <button id="btnMotion">Motion: On</button>
+</div>
+
+<div id="hud">
+  <div class="hud-card">
+    <h1><span class="dot"></span> Torus Knot <span>· GLSL Aurora</span></h1>
+    <p>Custom vertex + fragment shader with uTime pulsation.<br>Move mouse / drag to orbit · Scroll to zoom</p>
+  </div>
+  <div class="hud-card hud-right">
+    <b id="fpsLabel">60 FPS</b> <small>· capped RAF</small><br>
+    <small>particles: <b id="pcount">—</b> · draw calls minimal · pixelRatio ≤ 2</small>
+  </div>
+</div>
+
+<canvas id="c"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+// ── Renderer ───────────────────────────────────────────────────────────────
+// setPixelRatio capped at 2 prevents GPU overload on Retina while keeping crispness
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.88;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05070d);
+// subtle fog adds depth cue and hides particle pop-in at far plane
+scene.fog = new THREE.Fog(0x05070d, 14, 42);
+
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 1.2, 10);
+
+// ── Lighting (supports bloom emissive look without external assets) ────────
+scene.add(new THREE.AmbientLight(0x455a8a, 0.45));
+const dirLight = new THREE.DirectionalLight(0x9ec8ff, 1.2);
+dirLight.position.set(4, 6, 3);
+scene.add(dirLight);
+const pointA = new THREE.PointLight(0x3ef0c8, 7, 18);
+pointA.position.set(2.5, 1.5, 2);
+scene.add(pointA);
+const pointB = new THREE.PointLight(0x8a5cff, 6, 20);
+pointB.position.set(-3, -1.2, -1.5);
+scene.add(pointB);
+const pointC = new THREE.PointLight(0xff6a9d, 4, 14);
+pointC.position.set(0, 3, -2.5);
+scene.add(pointC);
+
+// ── Hero: Procedural Torus Knot with Custom Shader ────────────────────────
+// Why custom ShaderMaterial: we need uTime-driven iridescence that MeshStandardMaterial can't express.
+// Vertex shader displaces surface along normal for organic pulsation; fragment shader mixes 4 aurora hues via HSV.
+const knotGeo = new THREE.TorusKnotGeometry(1.55, 0.42, 320, 64, 2, 3);
+// TorusKnotGeometry is indexed; keeping it indexed saves memory. No need to dispose until page unload.
+
+const knotUniforms = {
+  uTime: { value: 0 },
+  uBloomBoost: { value: 1.0 }
+};
+
+const vertexShader = `
+  // pulsating displacement + pass data to fragment
+  uniform float uTime;
+  varying vec3 vPos;
+  varying vec3 vNormal;
+  varying vec2 vUv;
+  varying float vWave;
+
+  // inexpensive pseudo-noise
+  float n(vec3 p){
+    return sin(p.x*3.1 + uTime*0.6)*sin(p.y*2.7 - uTime*0.5)*sin(p.z*4.3 + uTime*0.4);
+  }
+
+  void main(){
+    vUv = uv;
+    vNormal = normalize(normalMatrix * normal);
+    vec3 pos = position;
+
+    // primary pulsation: inflate along normal with low-frequency wave
+    float pulse = sin(uTime*0.7 + length(position)*0.9) * 0.07;
+    float detail = n(position) * 0.04;
+    float wave = pulse + detail;
+    vWave = wave;
+    pos += normal * wave;
+
+    // subtle twist for extra life
+    float twist = sin(uTime*0.35 + pos.y*1.2)*0.06;
+    pos.x += twist * normal.z;
+    pos.z -= twist * normal.x;
+
+    vPos = pos;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+  }
+`;
+
+const fragmentShader = `
+  uniform float uTime;
+  uniform float uBloomBoost;
+  varying vec3 vPos;
+  varying vec3 vNormal;
+  varying vec2 vUv;
+  varying float vWave;
+
+  // HSV helper: vivid aurora palette without textures
+  vec3 hsv2rgb(vec3 c){
+    vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz)*6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+
+  void main(){
+    // fresnel: rim glow on grazing angles
+    float fresnel = pow(1.0 - max(dot(vNormal, vec3(0.0,0.0,1.0)), 0.0), 2.2);
+    // also view-direction fresnel via normal length cue
+    float rim = pow(1.0 - abs(dot(vNormal, normalize(vec3(0.2,0.4,1.0)))), 2.0);
+
+    // time-driven hue shift: cycles through cyan → violet → magenta → cyan
+    float hueBase = fract(vUv.x * 0.85 + vUv.y*0.15 + uTime*0.04 + vWave*1.2);
+    // add angular hue variation so knot lobes have distinct colors
+    float hue = fract(hueBase + atan(vPos.z, vPos.x)*0.08);
+    vec3 colA = hsv2rgb(vec3(hue, 0.78, 1.0));
+    vec3 colB = hsv2rgb(vec3(fract(hue+0.08), 0.85, 1.0));
+
+    // mix two close hues for iridescent banding
+    float bands = sin(vUv.x*18.0 + uTime*0.9 + vWave*22.0)*0.5+0.5;
+    vec3 base = mix(colA, colB, bands*0.55);
+
+    // aurora gradient modulated vertically
+    float aurora = sin(vPos.y*2.2 + uTime*0.6)*0.5+0.5;
+    vec3 auroraCol = mix(vec3(0.15,0.95,0.85), vec3(0.55,0.35,1.0), aurora);
+    base = mix(base, auroraCol, 0.22 + fresnel*0.18);
+
+    // emissive kept deliberately low — bloom should halo the shape, not white-out the surface
+    float beat = sin(uTime*1.1)*0.5+0.5;
+    float emissive = fresnel*0.45 + rim*0.28 + beat*0.08 + bands*0.07;
+    emissive = clamp(emissive, 0.0, 0.85) * uBloomBoost;
+
+    vec3 lightDir = normalize(vec3(0.6, 0.9, 0.7));
+    float spec = pow(max(dot(vNormal, lightDir), 0.0), 42.0) * 0.45;
+
+    // keep diffuse well below 1.0; ACESFilmic compresses >1.0 toward white
+    vec3 finalCol = base * (0.42 + emissive*0.22) + vec3(spec);
+    // tiny selective bloom lift — does not raise whole surface
+    finalCol += base * emissive * 0.18;
+
+    gl_FragColor = vec4(finalCol, 1.0);
+  }
+`;
+
+const knotMat = new THREE.ShaderMaterial({
+  uniforms: knotUniforms,
+  vertexShader,
+  fragmentShader,
+  // double-sided avoids black backfaces inside knot holes
+});
+
+const knot = new THREE.Mesh(knotGeo, knotMat);
+scene.add(knot);
+
+// subtle wireframe ghost for depth complexity (very low opacity)
+const ghostMat = new THREE.MeshBasicMaterial({ color: 0x6ec8ff, wireframe: true, transparent: true, opacity: 0.035 });
+const ghost = new THREE.Mesh(knotGeo, ghostMat);
+ghost.scale.set(1.006, 1.006, 1.006);
+scene.add(ghost);
+
+// ── Particle Field — BufferGeometry + Points ──────────────────────────────
+// Why BufferGeometry + gl.POINTS: thousands of particles as individual Meshes would be thousands of draw calls.
+// One Points object = one draw call; all per-particle data lives in GPU buffers.
+const PARTICLE_COUNT = 3800;
+const pPos = new Float32Array(PARTICLE_COUNT * 3);
+const pCol = new Float32Array(PARTICLE_COUNT * 3);
+const pSize = new Float32Array(PARTICLE_COUNT);
+const pSpeed = new Float32Array(PARTICLE_COUNT);
+
+for(let i=0;i<PARTICLE_COUNT;i++){
+  // distribute on spherical shells with bias toward hero object
+  const r = 2.2 + Math.pow(Math.random(), 0.65) * 9.5; // more dense near knot
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2*Math.random()-1);
+  pPos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+  pPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta) * 0.9;
+  pPos[i*3+2] = r * Math.cos(phi);
+
+  // aurora-tinted colors: cyan / violet / pink / soft white
+  const t = Math.random();
+  let pr,pg,pb;
+  if(t < 0.32){ pr=0.35; pg=0.95; pb=0.92; }
+  else if(t < 0.58){ pr=0.62; pg=0.45; pb=1.0; }
+  else if(t < 0.78){ pr=1.0; pg=0.45; pb=0.72; }
+  else { pr=0.92; pg=0.95; pb=1.0; }
+  // add slight jitter so not flat
+  const j = 0.08;
+  pCol[i*3]   = pr + (Math.random()-0.5)*j;
+  pCol[i*3+1] = pg + (Math.random()-0.5)*j;
+  pCol[i*3+2] = pb + (Math.random()-0.5)*j;
+
+  pSize[i] = 0.7 + Math.random()*1.8;
+  pSpeed[i] = 0.15 + Math.random()*0.75;
+}
+document.getElementById('pcount').textContent = PARTICLE_COUNT.toLocaleString();
+
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+pGeo.setAttribute('size', new THREE.BufferAttribute(pSize, 1));
+
+const pVertex = `
+  attribute float size;
+  varying vec3 vColor;
+  varying float vDepth;
+  void main(){
+    vColor = color;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    // depth-based fade: compute linear depth cue in vertex shader
+    vDepth = -mv.z;
+    // size attenuation: perspective correct + distance modulation
+    gl_PointSize = size * (340.0 / -mv.z);
+    gl_PointSize = clamp(gl_PointSize, 0.0, 9.0);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const pFragment = `
+  varying vec3 vColor;
+  varying float vDepth;
+  void main(){
+    // soft circular particle with smooth falloff
+    vec2 c = gl_PointCoord - 0.5;
+    float d = dot(c,c);
+    if(d > 0.25) discard;
+    float alpha = 1.0 - smoothstep(0.08, 0.25, d);
+    // depth-based opacity fade: distant particles fade out softly
+    float depthFade = 1.0 - smoothstep(5.0, 22.0, vDepth);
+    // extra near fade to avoid huge blobs when camera close
+    float nearFade = smoothstep(1.5, 3.0, vDepth);
+    float a = alpha * depthFade * nearFade * 0.85;
+    // brighten center for bloom contribution
+    vec3 col = vColor * (1.0 + (1.0 - d*4.0)*0.6);
+    gl_FragColor = vec4(col, a);
+  }
+`;
+
+const pMat = new THREE.PointsMaterial ? null : null; // placeholder to avoid confusion
+const particleMat = new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: pVertex,
+  fragmentShader: pFragment,
+  transparent: true,
+  depthWrite: false, // prevents depth fighting with many overlapping points
+  blending: THREE.AdditiveBlending, // additive = glow where particles overlap
+  vertexColors: true
+});
+
+const particles = new THREE.Points(pGeo, particleMat);
+scene.add(particles);
+
+// inner halo — dispersed shell around knot for parallax, not a tight equatorial band
+const RING_COUNT = 420;
+const rPos = new Float32Array(RING_COUNT*3);
+const rCol = new Float32Array(RING_COUNT*3);
+const rSize = new Float32Array(RING_COUNT);
+for(let i=0;i<RING_COUNT;i++){
+  // spherical shell 2.0–3.1 so particles don't clump in a plane when viewed edge-on
+  const rr = 2.0 + Math.random()*1.1;
+  const th = Math.random()*Math.PI*2, ph = Math.acos(2*Math.random()-1);
+  rPos[i*3]= rr * Math.sin(ph)*Math.cos(th);
+  rPos[i*3+1]= rr * Math.sin(ph)*Math.sin(th) * 0.85;
+  rPos[i*3+2]= rr * Math.cos(ph);
+  const t = Math.random();
+  if(t<0.5){ rCol[i*3]=0.42; rCol[i*3+1]=0.62; rCol[i*3+2]=0.92; }
+  else if(t<0.8){ rCol[i*3]=0.58; rCol[i*3+1]=0.92; rCol[i*3+2]=0.88; }
+  else { rCol[i*3]=0.92; rCol[i*3+1]=0.82; rCol[i*3+2]=0.95; }
+  rSize[i]= 0.45 + Math.random()*0.7;
+}
+const rGeo = new THREE.BufferGeometry();
+rGeo.setAttribute('position', new THREE.BufferAttribute(rPos,3));
+rGeo.setAttribute('color', new THREE.BufferAttribute(rCol,3));
+rGeo.setAttribute('size', new THREE.BufferAttribute(rSize,1));
+// ring dims further and uses transparent normal blending so dense overlap doesn't bloom to white
+const ringFragment = pFragment.replace('* 0.85', '* 0.32').replace('*0.6)', '*0.12)');
+const ringMat = new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: pVertex,
+  fragmentShader: ringFragment,
+  transparent: true, depthWrite: false, blending: THREE.NormalBlending, vertexColors: true,
+  depthTest: true
+});
+const ring = new THREE.Points(rGeo, ringMat);
+scene.add(ring);
+
+// faint starfield backdrop (large radius, very low opacity)
+{
+  const sCount = 1200;
+  const sPos = new Float32Array(sCount*3);
+  const sCol = new Float32Array(sCount*3);
+  const sSize = new Float32Array(sCount);
+  for(let i=0;i<sCount;i++){
+    const r= 22 + Math.random()*18;
+    const th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    sPos[i*3]= r*Math.sin(ph)*Math.cos(th);
+    sPos[i*3+1]= r*Math.sin(ph)*Math.sin(th);
+    sPos[i*3+2]= r*Math.cos(ph);
+    const v=0.7+Math.random()*0.3;
+    sCol[i*3]=v; sCol[i*3+1]=v; sCol[i*3+2]=v;
+    sSize[i]= Math.random()*1.1+0.2;
+  }
+  const sGeo=new THREE.BufferGeometry();
+  sGeo.setAttribute('position',new THREE.BufferAttribute(sPos,3));
+  sGeo.setAttribute('color',new THREE.BufferAttribute(sCol,3));
+  sGeo.setAttribute('size',new THREE.BufferAttribute(sSize,1));
+  const sMat=new THREE.ShaderMaterial({
+    uniforms:{}, vertexShader:pVertex,
+    fragmentShader: pFragment.replace('0.85','0.42'), // dimmer
+    transparent:true, depthWrite:false, blending:THREE.AdditiveBlending, vertexColors:true
+  });
+  scene.add(new THREE.Points(sGeo,sMat));
+}
+
+// ── Post-processing Bloom ───────────────────────────────────────────────
+// Why EffectComposer: allows RenderPass → UnrealBloomPass chain. Bloom threshold tuned so only
+// bright emissive parts of hero glow, not the dark background.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  0.48, // strength — halved to keep knot colored not white
+  0.32, // radius — tighter halo avoids washing center
+  0.68  // threshold — only specular/rim blooms, diffuse stays crisp
+
+);
+composer.addPass(bloomPass);
+let bloomEnabled = true;
+
+// ── Mouse-reactive Camera (Lerp/Damping) ────────────────────────────────
+// Why lerp: smooth orbit toward mouse without snapping; feels polished and reduces motion sickness.
+const mouse = { x: 0, y: 0 };
+const target = { x: 0, y: 0 };
+let isDragging = false;
+let yaw = 0, pitch = 0.12;
+let targetYaw = 0, targetPitch = 0.12;
+let dist = 9.2, targetDist = 9.2;
+let autoOrbit = true;
+
+const SENS_X = 2.2; // horizontal sensitivity
+const SENS_Y = 1.35; // vertical sensitivity
+
+addEventListener('mousemove', e=>{
+  // normalized -1..1
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  if(!isDragging){
+    targetYaw = mouse.x * 0.85;
+    targetPitch = mouse.y * 0.45;
+  }
+});
+addEventListener('mousedown', ()=> isDragging = true);
+addEventListener('mouseup', ()=> isDragging = false);
+addEventListener('mousemove', e=>{
+  if(!isDragging) return;
+  targetYaw += e.movementX * 0.004 * SENS_X;
+  targetPitch += -e.movementY * 0.004 * SENS_Y;
+  targetPitch = Math.max(-0.65, Math.min(0.75, targetPitch));
+});
+canvas.addEventListener('touchstart', e=>{
+  isDragging=true;
+  const t=e.touches[0]; mouse.x=(t.clientX/innerWidth)*2-1; mouse.y=-(t.clientY/innerHeight)*2+1;
+},{passive:true});
+canvas.addEventListener('touchmove', e=>{
+  const t=e.touches[0];
+  const nx=(t.clientX/innerWidth)*2-1, ny=-(t.clientY/innerHeight)*2+1;
+  targetYaw += (nx - mouse.x)*1.2;
+  targetPitch += (ny - mouse.y)*0.9;
+  targetPitch=Math.max(-0.65,Math.min(0.75,targetPitch));
+  mouse.x=nx; mouse.y=ny;
+},{passive:true});
+addEventListener('touchend', ()=> isDragging=false);
+addEventListener('wheel', e=>{
+  targetDist += e.deltaY * 0.008;
+  targetDist = Math.max(4.2, Math.min(16, targetDist));
+},{passive:true});
+
+// buttons
+document.getElementById('btnBloom').onclick = function(){
+  bloomEnabled = !bloomEnabled;
+  this.classList.toggle('active', bloomEnabled);
+  this.textContent = bloomEnabled ? 'Bloom ON' : 'Bloom OFF';
+};
+document.getElementById('btnMotion').onclick = function(){
+  autoOrbit = !autoOrbit;
+  this.textContent = autoOrbit ? 'Motion: On' : 'Motion: Off';
+  this.classList.toggle('active', autoOrbit);
+};
+
+// ── Responsive: handle resize without tearing ───────────────────────────
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  // renderer pixelRatio already capped; no need to reset
+});
+
+// ── Animation Loop — capped at ~60fps via RAF ───────────────────────────
+// Why RAF: browser throttles to display refresh; ~60fps on 60Hz, no wasted frames.
+// Guardrails: no geometry rebuild per frame, dispose only on teardown, single Points draw calls.
+const clock = new THREE.Clock();
+let fpsAcc=0, fpsCount=0, fpsTime=0;
+let firstFrame = true;
+let motionPhase = 0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.033); // clamp delta to avoid jumps on tab refocus
+  const t = clock.elapsedTime;
+
+  // hero rotation: slow auto-rotation + mouse influence
+  if(autoOrbit) motionPhase += dt * 0.22;
+  knot.rotation.y = motionPhase + yaw * 0.35;
+  knot.rotation.x = pitch * 0.45;
+  knot.rotation.z = Math.sin(t*0.18)*0.07;
+  ghost.rotation.copy(knot.rotation);
+
+  // smooth camera orbit via lerp (damping)
+  yaw   += (targetYaw - yaw) * 0.06;
+  pitch += (targetPitch - pitch) * 0.06;
+  dist  += (targetDist - dist) * 0.08;
+
+  const cy = Math.cos(yaw) * Math.cos(pitch) * dist;
+  const sy = Math.sin(pitch) * dist * 0.6;
+  const cz = Math.sin(yaw) * Math.cos(pitch) * dist;
+  // gentle vertical bob
+  camera.position.set(cy, 1.0 + sy + Math.sin(t*0.3)*0.12, cz);
+  camera.lookAt(0, 0, 0);
+
+  // update shader time
+  knotUniforms.uTime.value = t;
+
+  // particles: slow orbital rotation + subtle vertical drift (mutate buffer directly, no new geometry)
+  const posAttr = pGeo.attributes.position;
+  const arr = posAttr.array;
+  for(let i=0;i<PARTICLE_COUNT;i++){
+    const i3=i*3;
+    const sp = pSpeed[i];
+    // orbit around Y axis
+    const ang = sp * dt * 0.22 * (0.6 + (i%3)*0.25);
+    const cosA=Math.cos(ang), sinA=Math.sin(ang);
+    const x=arr[i3], z=arr[i3+2];
+    arr[i3]   = x*cosA - z*sinA;
+    arr[i3+2] = x*sinA + z*cosA;
+    // subtle breathing
+    arr[i3+1] += Math.sin(t*0.35 + i*0.01) * dt * 0.03;
+  }
+  posAttr.needsUpdate = true;
+
+  // ring precession
+  ring.rotation.y += dt * 0.18;
+  ring.rotation.x = Math.sin(t*0.12)*0.08;
+
+  // point lights gently orbit for dynamic bloom
+  pointA.position.x = Math.cos(t*0.42)*2.8;
+  pointA.position.z = Math.sin(t*0.42)*2.2;
+  pointB.position.x = Math.cos(t*0.31+2)*3.2;
+
+  // FPS counter (throttled to 4x/sec to avoid DOM thrash)
+  fpsAcc += dt; fpsCount++; fpsTime += dt;
+  if(fpsTime > 0.25){
+    const fps = Math.round(1 / (fpsAcc / fpsCount));
+    document.getElementById('fpsLabel').textContent = fps + ' FPS';
+    fpsAcc=0; fpsCount=0; fpsTime=0;
+  }
+
+  // render via composer (bloom) or direct renderer
+  if(bloomEnabled) composer.render();
+  else renderer.render(scene, camera);
+
+  // hide loader after first successful frame
+  if(firstFrame){
+    firstFrame=false;
+    const loader=document.getElementById('loader');
+    loader.classList.add('hide');
+    // dispose loader after transition to free it
+    setTimeout(()=> loader.remove(), 1000);
+  }
+}
+animate();
+
+// ── Cleanup guard: dispose on page hide/unload to avoid leaks if embedded ──
+addEventListener('pagehide', ()=>{
+  knotGeo.dispose();
+  knotMat.dispose();
+  ghostMat.dispose();
+  pGeo.dispose();
+  particleMat.dispose();
+  rGeo.dispose();
+  ringMat.dispose();
+  renderer.dispose();
+});
+</script>
+</body>
+</html>

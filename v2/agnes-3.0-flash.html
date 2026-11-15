@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aurora Knot</title>
+<style>
+  :root {
+    --bg: #05070c;
+    --panel: rgba(9, 13, 22, 0.78);
+    --line: rgba(126, 214, 255, 0.16);
+    --text: #dce8f4;
+    --dim: #8ba1b6;
+    --accent: #7de3ff;
+    --accent2: #b48bff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { display: block; touch-action: none; }
+
+  /* ---------- panels: one visual system ---------- */
+  .panel {
+    position: fixed;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 12px 44px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    padding: 14px 16px;
+    transition: opacity 0.4s ease, visibility 0.4s;
+  }
+  .panel h2 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  /* title card, top-left */
+  .panel-title { top: 20px; left: 20px; width: 300px; }
+  .panel-title h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: 0.02em; }
+  .panel-title h1 em {
+    font-style: normal;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .panel-title p { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--dim); }
+
+  /* telemetry, top-right */
+  .panel-tele { top: 20px; right: 20px; width: 200px; }
+  .panel-tele dl { margin: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; }
+  .panel-tele dt { font-size: 11px; color: var(--dim); letter-spacing: 0.08em; text-transform: uppercase; }
+  .panel-tele dd {
+    margin: 0; font-family: var(--mono); font-size: 12.5px; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .panel-tele dd b { color: var(--accent); font-weight: 500; }
+
+  /* controls, below the title card */
+  .panel-ctrl { top: 208px; left: 20px; width: 300px; }
+  .ctl { display: block; margin-bottom: 11px; }
+  .ctl:last-of-type { margin-bottom: 4px; }
+  .ctl-row { display: flex; align-items: center; gap: 10px; }
+  .ctl label {
+    flex: 1; font-size: 12px; color: var(--text);
+    display: flex; justify-content: space-between; gap: 10px; margin-bottom: 2px;
+  }
+  .ctl output { font-family: var(--mono); font-size: 11.5px; color: var(--accent); min-width: 52px; text-align: right; }
+  input[type="range"] {
+    width: 100%; margin: 2px 0 0; appearance: none; -webkit-appearance: none;
+    height: 4px; border-radius: 2px; background: rgba(125, 227, 255, 0.18); outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); border: 2px solid #0a1018; cursor: pointer;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: 2px solid #0a1018; cursor: pointer;
+  }
+  input[type="range"]:focus-visible { outline: 2px solid var(--accent2); outline-offset: 3px; }
+
+  .sw-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .switch {
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(125, 227, 255, 0.07);
+    border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text); font-size: 12px; padding: 7px 11px; cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .switch:hover { border-color: rgba(125, 227, 255, 0.45); }
+  .switch:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  .switch .dot { width: 7px; height: 7px; border-radius: 50%; background: #3a4a5c; transition: background 0.2s; }
+  .switch[aria-pressed="true"] .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  /* toggle state is text, not color-only, so screen readers and color-blind users get it */
+  .switch .state { font-family: var(--mono); font-size: 10px; letter-spacing: 0.1em; color: var(--dim); min-width: 22px; }
+  .switch[aria-pressed="true"] .state { color: var(--accent); }
+
+  /* gesture hint, bottom-right */
+  .panel-hint { bottom: 20px; right: 20px; width: 230px; }
+  .panel-hint ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+  .panel-hint li { display: flex; gap: 8px; font-size: 12px; color: var(--dim); }
+  .panel-hint kbd {
+    font-family: var(--mono); font-size: 10.5px; color: var(--text);
+    background: rgba(125, 227, 255, 0.1); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 7px; white-space: nowrap;
+  }
+
+  /* show/hide interface chip — stays visible even when panels hide */
+  #uiToggle {
+    position: fixed; bottom: 20px; left: 20px; z-index: 30;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    color: var(--text); font-size: 12px; padding: 8px 16px; cursor: pointer;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  #uiToggle:hover { border-color: rgba(125, 227, 255, 0.5); }
+  #uiToggle:focus-visible { outline: 2px solid var(--accent2); outline-offset: 2px; }
+  #uiToggle kbd {
+    font-family: var(--mono); font-size: 10px; margin-left: 6px; padding: 0 4px;
+    border: 1px solid var(--line); border-radius: 4px; color: var(--dim);
+  }
+
+  /* whole-interface hidden state (desktop) */
+  body.ui-hidden .panel { opacity: 0; visibility: hidden; pointer-events: none; }
+
+  /* ---------- loader: honest three stages ---------- */
+  #loader {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+    transition: opacity 0.6s ease;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  .loader-card { width: 320px; text-align: center; }
+  .loader-card .t {
+    font-size: 22px; font-weight: 600; letter-spacing: 0.04em; margin: 0 0 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .loader-card .s { margin: 0 0 18px; font-size: 12px; color: var(--dim); min-height: 16px; }
+  .bar { height: 2px; border-radius: 2px; background: rgba(125, 227, 255, 0.12); overflow: hidden; }
+  .bar-fill {
+    height: 100%; width: 4%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width 0.4s ease;
+  }
+
+  /* ---------- failure ---------- */
+  #fail {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center; background: var(--bg);
+  }
+  #fail[hidden] { display: none; }
+  .fail-card {
+    width: min(440px, calc(100vw - 48px)); text-align: center;
+    background: var(--panel); border: 1px solid rgba(255, 140, 150, 0.25);
+    border-radius: 14px; padding: 28px;
+  }
+  .fail-card h2 { color: #ff8c96; letter-spacing: 0.12em; text-transform: uppercase; font-size: 12px; margin: 0 0 10px; }
+  .fail-card p { margin: 0; font-size: 13.5px; line-height: 1.6; color: var(--text); }
+
+  /* ---------- phone: the scene gets the space, panels collapse ---------- */
+  @media (max-width: 640px) {
+    .panel-title { top: 14px; left: 14px; width: calc(100vw - 128px); padding: 12px 14px; }
+    .panel-title p { display: none; }
+    .panel-tele, .panel-hint { display: none; }
+    /* controls become a bottom sheet */
+    .panel-ctrl {
+      top: auto; left: 10px; right: 10px; bottom: 66px; width: auto;
+      max-height: 42vh; overflow-y: auto;
+      transform: translateY(calc(100% + 90px));
+      transition: transform 0.35s ease, opacity 0.35s ease;
+    }
+    body.ctrl-open .panel-ctrl { transform: none; }
+    #uiToggle { left: auto; right: 14px; bottom: 14px; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="stage" aria-hidden="true"></div>
+
+<div id="loader" role="status" aria-live="polite">
+  <div class="loader-card">
+    <p class="t">Aurora&nbsp;Knot</p>
+    <p class="s" id="loaderStatus">Fetching Three.js…</p>
+    <div class="bar"><div class="bar-fill" id="loaderBar"></div></div>
+  </div>
+</div>
+
+<div id="fail" hidden>
+  <div class="fail-card">
+    <h2>Scene unavailable</h2>
+    <p id="failMsg"></p>
+  </div>
+</div>
+
+<div id="ui">
+  <section class="panel panel-title" aria-label="About this scene">
+    <h1><em>Aurora</em> Knot</h1>
+    <p>A procedural torus knot wrapped by 6,000 drifting particles. Every color is computed in GLSL each frame — no textures, no models, one file.</p>
+  </section>
+
+  <section class="panel panel-tele" aria-label="Live telemetry">
+    <h2>Telemetry</h2>
+    <dl>
+      <dt>Frames</dt> <dd><b id="tFps">—</b> fps</dd>
+      <dt>Frame time</dt> <dd id="tMs">— ms</dd>
+      <dt>Particles</dt> <dd id="tCount">—</dd>
+      <dt>Zoom</dt> <dd id="tZoom">—</dd>
+      <dt>Scene time</dt> <dd id="tTime">0.0 s</dd>
+    </dl>
+  </section>
+
+  <section class="panel panel-ctrl" aria-label="Scene controls">
+    <h2>Controls</h2>
+    <div class="ctl">
+      <label for="cBloom">Bloom strength</label>
+      <div class="ctl-row">
+        <input type="range" id="cBloom" min="0" max="2.5" step="0.05" value="0.65">
+        <output id="oBloom" for="cBloom">0.65</output>
+      </div>
+    </div>
+    <div class="ctl">
+      <label for="cThr">Bloom threshold</label>
+      <div class="ctl-row">
+        <input type="range" id="cThr" min="0" max="1" step="0.01" value="0.66">
+        <output id="oThr" for="cThr">0.66</output>
+      </div>
+    </div>
+    <div class="ctl">
+      <label for="cSpeed">Particle speed</label>
+      <div class="ctl-row">
+        <input type="range" id="cSpeed" min="0" max="3" step="0.05" value="1">
+        <output id="oSpeed" for="cSpeed">1.00</output>
+      </div>
+    </div>
+    <div class="ctl">
+      <label for="cHue">Hue shift</label>
+      <div class="ctl-row">
+        <input type="range" id="cHue" min="0" max="1" step="0.01" value="0">
+        <output id="oHue" for="cHue">0°</output>
+      </div>
+    </div>
+    <div class="ctl">
+      <label for="cSense">Mouse sensitivity</label>
+      <div class="ctl-row">
+        <input type="range" id="cSense" min="0.2" max="2.5" step="0.05" value="1">
+        <output id="oSense" for="cSense">1.00×</output>
+      </div>
+    </div>
+    <div class="sw-row">
+      <button class="switch" id="tBloom" aria-pressed="true"><span class="dot"></span>Bloom<span class="state">on</span></button>
+      <button class="switch" id="tParts" aria-pressed="true"><span class="dot"></span>Particles<span class="state">on</span></button>
+      <button class="switch" id="tPause" aria-pressed="false"><span class="dot"></span>Pause<span class="state">off</span></button>
+    </div>
+  </section>
+
+  <section class="panel panel-hint" aria-label="Pointer gestures">
+    <h2>Pointer</h2>
+    <ul>
+      <li><kbd>move</kbd> orbit the camera</li>
+      <li><kbd>scroll</kbd> zoom in / out</li>
+      <li><kbd>H</kbd> hide interface</li>
+    </ul>
+  </section>
+</div>
+
+<button id="uiToggle" aria-pressed="true">Hide UI<kbd>H</kbd></button>
+
+<noscript><div id="fail"><div class="fail-card"><h2>Scene unavailable</h2><p>This page needs JavaScript to render the 3D scene.</p></div></div></noscript>
+
+<script type="module">
+/* ============================== boot ============================== */
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+function stage(msg, pct) {
+  const s = $('loaderStatus');
+  if (s) { s.textContent = msg; $('loaderBar').style.width = pct + '%'; }
+}
+
+function fail(msg) {
+  const l = $('loader');
+  if (l) l.remove();
+  const f = $('fail');
+  f.hidden = false;
+  $('failMsg').textContent = msg;
+}
+
+async function boot() {
+  stage('Fetching Three.js…', 15);
+  let THREE, EffectComposer, RenderPass, UnrealBloomPass, OutputPass;
+  try {
+    THREE = await import('three');
+    ({ EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js'));
+    ({ RenderPass } = await import('three/addons/postprocessing/RenderPass.js'));
+    ({ UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js'));
+    ({ OutputPass } = await import('three/addons/postprocessing/OutputPass.js'));
+  } catch (err) {
+    console.error(err);
+    fail('Could not load Three.js from the CDN. The page makes one network request, and this is it — check your connection and reload.');
+    return;
+  }
+
+  stage('Checking WebGL…', 40);
+  const probe = document.createElement('canvas');
+  if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) {
+    fail('This browser has no usable WebGL context. The scene cannot render — try a current Chrome, Firefox, or Safari.');
+    return;
+  }
+
+  stage('Building scene…', 55);
+  const stageEl = $('stage');
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  } catch (err) {
+    console.error(err);
+    fail('WebGL context creation failed. If this persists, the browser or GPU driver may be blocking hardware acceleration.');
+    return;
+  }
+  // Cap DPR at 2: bloom cost scales with pixel count, and Retina would push 4x the pixels through the chain.
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  stageEl.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05070c);
+  const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 100);
+
+  /* ------------------------- hero: torus knot ------------------------- */
+  // Custom shader because the surface color must drift over time and space;
+  // built-in materials have no per-fragment hue model to hook into.
+  const HUE_BASE = 0.42; // teal-green base; the hue slider shifts from here
+  const heroUniforms = { uTime: { value: 0 }, uHue: { value: HUE_BASE } };
+  const heroGeo = new THREE.TorusKnotGeometry(1, 0.34, 240, 40);
+  const heroMat = new THREE.ShaderMaterial({
+    uniforms: heroUniforms,
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vViewPos;
+      varying vec3 vWorldPos;
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mv = viewMatrix * wp;
+        vViewPos = mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      precision highp float;
+      uniform float uTime;
+      uniform float uHue;
+      varying vec3 vNormal;
+      varying vec3 vViewPos;
+      varying vec3 vWorldPos;
+
+      // Compact HLS: hued circles mixed toward full chroma — enough for iridescent drift.
+      vec3 hsl2rgb(float h, float s, float l) {
+        vec3 c = clamp(abs(fract(h + vec3(0.0, 0.666667, 0.333333)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+        return mix(vec3(l), c, s * (1.0 - abs(2.0 * l - 1.0)));
+      }
+      void main() {
+        vec3 N = normalize(vNormal);
+        vec3 V = normalize(-vViewPos);
+        float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.0);
+        // Two traveling sine bands, cubed to sharpen their crests into hot embers
+        // that cross the bloom threshold: the knot reads as folded light.
+        float band = 0.5 + 0.5 * sin(vWorldPos.x * 1.6 + vWorldPos.y * 2.2 - uTime * 0.6);
+        band = pow(band, 3.0);
+        float h = fract(uHue + uTime * 0.015 + fres * 0.25 + band * 0.22 + vWorldPos.z * 0.09);
+        vec3 col = hsl2rgb(h, 0.85, 0.27 + 0.34 * fres + 0.34 * band);
+        // Crests hit roughly 2.3x base, enough to cross the bloom threshold; the base stays readable.
+        gl_FragColor = vec4(col * (0.85 + 1.4 * band), 1.0);
+      }`,
+  });
+  const hero = new THREE.Mesh(heroGeo, heroMat);
+  scene.add(hero);
+
+  /* ------------------------- particle field ------------------------- */
+  const COUNT = 6000;
+  const pGeo = new THREE.BufferGeometry();
+  // Orbit math runs in the vertex shader: a CPU loop over 6000 points every
+  // frame would be the whole frame budget; here the GPU does it for free.
+  const seed = new Float32Array(COUNT * 4); // radius, phase, speed, size
+  const misc = new Float32Array(COUNT * 2); // yOffset, hueOffset
+  const dummy = new Float32Array(COUNT * 3); // position is computed on GPU; attribute required but unused
+  for (let i = 0; i < COUNT; i++) {
+    const t = Math.random();
+    const r = 2.6 + 7.4 * Math.pow(t, 1.6); // denser near the knot, sparse at the rim
+    seed[i * 4] = r;
+    seed[i * 4 + 1] = Math.random() * Math.PI * 2;
+    seed[i * 4 + 2] = 0.12 + Math.random() * 0.5;
+    seed[i * 4 + 3] = 0.05 + Math.random() * 0.22;
+    misc[i * 2] = (Math.random() - 0.5) * (0.9 + r * 0.38); // lens-shaped thickness
+    misc[i * 2 + 1] = Math.random() * 0.12;
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(dummy, 3));
+  pGeo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+  pGeo.setAttribute('aMisc', new THREE.BufferAttribute(misc, 2));
+
+  const pUniforms = {
+    uTime: { value: 0 },
+    uSpeed: { value: 1 },
+    uHue: { value: 0 },
+    uScale: { value: renderer.domElement.height * 0.5 },
+  };
+  const pMat = new THREE.ShaderMaterial({
+    uniforms: pUniforms,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute vec4 aSeed;
+      attribute vec2 aMisc;
+      uniform float uTime;
+      uniform float uSpeed;
+      uniform float uScale;
+      varying float vGlow;
+      varying float vHue;
+      void main() {
+        float a = aSeed.y + uTime * uSpeed * aSeed.z;
+        // Gentle vertical breathing so the field never sits like a flat disc.
+        float y = aMisc.x + 0.25 * sin(uTime * 0.4 + aSeed.y * 5.0);
+        vec3 p = vec3(cos(a) * aSeed.x, y, sin(a) * aSeed.x);
+        vec4 mv = viewMatrix * modelMatrix * vec4(p, 1.0);
+        float depth = max(-mv.z, 0.1);
+        // Near the camera: big and bright; far away: small, fading into the background.
+        vGlow = smoothstep(13.0, 3.5, depth);
+        vHue = aMisc.y;
+        gl_PointSize = clamp(uScale * aSeed.w / depth, 1.0, 48.0);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      precision highp float;
+      uniform float uHue;
+      varying float vGlow;
+      varying float vHue;
+      vec3 hsl2rgb(float h, float s, float l) {
+        vec3 c = clamp(abs(fract(h + vec3(0.0, 0.666667, 0.333333)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+        return mix(vec3(l), c, s * (1.0 - abs(2.0 * l - 1.0)));
+      }
+      void main() {
+        float d = length(gl_PointCoord - 0.5);
+        // Additive blending stacks: keep each particle dim so the field reads as depth,
+        // not a bright mass that smothers the hero.
+        float a = smoothstep(0.5, 0.12, d) * (0.04 + 0.55 * vGlow);
+        vec3 col = hsl2rgb(fract(uHue + vHue + 0.55), 0.8, 0.5 + 0.18 * vGlow);
+        gl_FragColor = vec4(col, a);
+      }`,
+  });
+  const points = new THREE.Points(pGeo, pMat);
+  points.frustumCulled = false; // orbit is computed in-shader; the CPU's position data is a placeholder
+  scene.add(points);
+
+  /* ------------------------- post: bloom ------------------------- */
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.65, 0.4, 0.66);
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+
+  /* ------------------------- camera control ------------------------- */
+  const cam = {
+    yaw: 0.6, pitch: 0.28, radius: 7.2,
+    tYaw: 0.6, tPitch: 0.28, tRadius: 7.2,
+    sense: 1,
+    lastInput: -10,
+  };
+  stageEl.addEventListener('pointermove', (e) => {
+    const nx = (e.clientX / innerWidth) * 2 - 1;
+    const ny = (e.clientY / innerHeight) * 2 - 1;
+    // Separate sensitivities: horizontal has double the travel of vertical,
+    // so the pointer feels natural and the camera never flips.
+    cam.tYaw = 0.6 + nx * 1.1 * cam.sense;
+    cam.tPitch = clamp(0.28 - ny * 0.55 * cam.sense, -0.95, 0.95);
+    cam.lastInput = performance.now() / 1000;
+  });
+  stageEl.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    cam.tRadius = clamp(cam.tRadius + e.deltaY * 0.0045, 3.4, 12.5);
+    cam.lastInput = performance.now() / 1000;
+  }, { passive: false });
+
+  function applyCamera(dt) {
+    // Idle drift: after 2.5 s without input the scene keeps a slow life of its own.
+    const now = performance.now() / 1000;
+    if (!paused && now - cam.lastInput > 2.5) cam.tYaw += dt * 0.06;
+    const k = 1 - Math.exp(-dt * 5); // exponential damping: smooth approach, never a snap
+    cam.yaw += (cam.tYaw - cam.yaw) * k;
+    cam.pitch += (cam.tPitch - cam.pitch) * k;
+    cam.radius += (cam.tRadius - cam.radius) * (1 - Math.exp(-dt * 3)); // zoom eased slower than orbit
+    camera.position.setFromSphericalCoords(cam.radius, Math.PI / 2 - cam.pitch, cam.yaw);
+    camera.lookAt(0, 0, 0);
+  }
+
+  /* ------------------------- UI wiring ------------------------- */
+  let paused = false;
+
+  function bindSlider(inputId, outId, fmt, fn) {
+    const el = $(inputId), out = $(outId);
+    const update = () => {
+      const v = parseFloat(el.value);
+      out.textContent = fmt(v);
+      fn(v);
+    };
+    el.addEventListener('input', update);
+    update();
+  }
+  bindSlider('cBloom', 'oBloom', (v) => v.toFixed(2), (v) => { bloomPass.strength = v; });
+  bindSlider('cThr', 'oThr', (v) => v.toFixed(2), (v) => { bloomPass.threshold = v; });
+  bindSlider('cSpeed', 'oSpeed', (v) => v.toFixed(2), (v) => { pUniforms.uSpeed.value = v; });
+  bindSlider('cHue', 'oHue', (v) => Math.round(v * 360) + '°', (v) => {
+    heroUniforms.uHue.value = HUE_BASE + v;
+    pUniforms.uHue.value = v;
+  });
+  bindSlider('cSense', 'oSense', (v) => v.toFixed(2) + '×', (v) => { cam.sense = v; });
+
+  function bindToggle(btnId, init, fn) {
+    const b = $(btnId);
+    const stateEl = b.querySelector('.state');
+    let on = init;
+    const set = (v) => {
+      on = v;
+      b.setAttribute('aria-pressed', String(on));
+      stateEl.textContent = on ? 'on' : 'off';
+      fn(on);
+    };
+    b.addEventListener('click', () => set(!on));
+    set(on);
+    return () => on;
+  }
+  bindToggle('tBloom', true, (on) => { bloomPass.enabled = on; });
+  bindToggle('tParts', true, (on) => { points.visible = on; });
+  bindToggle('tPause', false, (on) => { paused = on; });
+
+  // Hide the interface: desktop hides all panels; phone collapses the control sheet.
+  const uiToggle = $('uiToggle');
+  const mq = matchMedia('(max-width: 640px)');
+  const refreshToggleLabel = () => {
+    const phone = mq.matches;
+    const hidden = document.body.classList.contains('ui-hidden');
+    const open = document.body.classList.contains('ctrl-open');
+    uiToggle.firstChild.textContent = phone ? (open ? 'Hide controls' : 'Controls') : (hidden ? 'Show UI' : 'Hide UI');
+    uiToggle.setAttribute('aria-pressed', String(phone ? open : !hidden));
+  };
+  const toggleUI = () => {
+    if (mq.matches) document.body.classList.toggle('ctrl-open');
+    else document.body.classList.toggle('ui-hidden');
+    refreshToggleLabel();
+  };
+  uiToggle.addEventListener('click', toggleUI);
+  // Keep the chip honest when the viewport crosses the phone breakpoint: drop both states
+  // and let the new mode start clean (desktop hide, phone sheet-closed).
+  mq.addEventListener('change', () => {
+    document.body.classList.remove('ui-hidden', 'ctrl-open');
+    refreshToggleLabel();
+  });
+  addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'h' && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) toggleUI();
+  });
+  refreshToggleLabel();
+
+  $('tCount').textContent = COUNT.toLocaleString('en-US');
+
+  /* ------------------------- resize ------------------------- */
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    composer.setSize(innerWidth, innerHeight);
+    pUniforms.uScale.value = renderer.domElement.height * 0.5;
+  });
+
+  /* ------------------------- teardown ------------------------- */
+  // Three.js does not free GPU buffers; dispose explicitly on exit.
+  let rafId = 0;
+  const teardown = () => {
+    cancelAnimationFrame(rafId);
+    heroGeo.dispose();
+    heroMat.dispose();
+    pGeo.dispose();
+    pMat.dispose();
+    bloomPass.dispose?.();
+    composer.dispose?.();
+    renderer.dispose();
+  };
+  addEventListener('pagehide', teardown, { once: true });
+
+  /* ------------------------- render loop ------------------------- */
+  stage('Compiling shaders…', 80);
+  renderer.compile(scene, camera); // pre-compile so the first visible frame is not a shader hitch
+
+  const FRAME_MIN = 1000 / 60; // ~60 fps cap: 120/144 Hz displays would otherwise fire rAF faster
+  let lastT = performance.now();
+  let sceneTime = 0;
+  let frames = 0;
+  let fpsWindow = performance.now();
+  let msSmooth = 16.7;
+  let firstFrame = false;
+
+  function loop(t) {
+    rafId = requestAnimationFrame(loop);
+    const gap = t - lastT;
+    if (gap < FRAME_MIN - 0.5) return;
+    lastT = t - (gap % FRAME_MIN); // rebase to stay in phase with the 60 Hz grid
+    const dt = Math.min(gap / 1000, 0.1);
+    msSmooth = msSmooth * 0.9 + gap * 0.1;
+
+    if (!paused) sceneTime += dt;
+    heroUniforms.uTime.value = sceneTime;
+    pUniforms.uTime.value = sceneTime;
+
+    applyCamera(dt);
+    composer.render();
+
+    if (!firstFrame) {
+      firstFrame = true;
+      stage('Live', 100);
+      setTimeout(() => {
+        const l = $('loader');
+        l.classList.add('done');
+        setTimeout(() => l.remove(), 700);
+      }, 300);
+    }
+
+    frames++;
+    if (t - fpsWindow >= 500) {
+      const fps = Math.round((frames * 1000) / (t - fpsWindow));
+      $('tFps').textContent = paused ? 'paused' : fps;
+      $('tMs').textContent = msSmooth.toFixed(1) + ' ms';
+      $('tZoom').textContent = cam.radius.toFixed(1);
+      $('tTime').textContent = sceneTime.toFixed(1) + ' s';
+      frames = 0;
+      fpsWindow = t;
+    }
+  }
+  rafId = requestAnimationFrame(loop);
+}
+
+boot().catch((err) => {
+  console.error(err);
+  fail('Something went wrong while starting the scene: ' + (err.message || err));
+});
+</script>
+</body>
+</html>

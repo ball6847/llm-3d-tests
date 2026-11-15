@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Aurora Knot</title>
+<style>
+  /* ---- Design system ------------------------------------------------------
+     The accent palette is pulled straight from the shader's aurora range so
+     every control reads as part of one object. Panels use a dark glass fill
+     with a strong blur+shadow edge so they stay legible over the moving scene. */
+  :root {
+    --c1: #29f0ff;   /* cyan — hot bloom cores            */
+    --c2: #7b5cff;   /* violet — mid surface              */
+    --c3: #ff5cc6;   /* magenta — drift tail              */
+    --ink: #eef4ff;  /* near-white text                   */
+    --ink-dim: rgba(226, 238, 255, .5);
+    --glass: rgba(9, 13, 24, .72);
+    --glass-edge: rgba(255, 255, 255, .10);
+    --mono: ui-monospace, "SF Mono", Cascadia Code, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #05060c;
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* The canvas is fixed behind every UI layer. UI chrome is pointer-events:none
+     except where a control explicitly opts in, so the scene keeps receiving
+     mouse/scroll without the panels acting as a mat. */
+  #scene { position: fixed; inset: 0; display: block; }
+
+  /* ---- Loading state ------------------------------------------------------
+     Honest progress: a thin bar that fills while modules load, then fades out
+     on the first rendered frame so it never reads as a fake spinner. */
+  #loader {
+    position: fixed; inset: 0; z-index: 50;
+    display: grid; place-items: center; gap: 18px;
+    background: radial-gradient(120% 120% at 50% 40%, #0a0f1e, #05060c);
+    font-family: var(--mono);
+    transition: opacity .6s ease;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .label { font-size: 11px; letter-spacing: .32em; text-transform: uppercase; color: var(--ink-dim); }
+  #loader .track { width: min(42vw, 320px); height: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+  #loader .fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--c1), var(--c2), var(--c3)); transition: width .3s ease; }
+
+  /* ---- Failure state ------------------------------------------------------ */
+  #failure {
+    position: fixed; inset: 0; z-index: 60; display: none;
+    place-items: center; padding: 24px; text-align: center;
+    background: radial-gradient(120% 120% at 50% 40%, #120816, #05060c);
+    font-family: var(--mono);
+  }
+  #failure.on { display: grid; }
+  #failure .box { max-width: 440px; }
+  #failure h1 { font-size: 13px; letter-spacing: .28em; text-transform: uppercase; color: var(--c3); margin-bottom: 14px; }
+  #failure p { font-size: 13px; line-height: 1.7; color: var(--ink-dim); }
+
+  /* ---- UI chrome ---------------------------------------------------------- */
+  .ui { position: fixed; z-index: 10; pointer-events: none; }
+  .ui a, .ui button, .ui input, .ui [role="switch"] { pointer-events: auto; }
+
+  /* Title card — top-left identity block. */
+  #title { top: 26px; left: 26px; max-width: 46%; }
+  #title .kicker { font-family: var(--mono); font-size: 10px; letter-spacing: .34em; text-transform: uppercase; color: var(--c1); }
+  #title h1 { font-size: 34px; line-height: 1.05; letter-spacing: -.02em; margin-top: 6px; font-weight: 600; }
+  #title p { margin-top: 8px; font-size: 13px; line-height: 1.6; color: var(--ink-dim); max-width: 34ch; }
+
+  /* Telemetry — top-right live numbers, right-aligned. */
+  #telemetry { top: 26px; right: 26px; text-align: right; font-family: var(--mono); }
+  #telemetry .row { display: flex; gap: 18px; justify-content: flex-end; margin-top: 10px; }
+  #telemetry .cell { min-width: 62px; }
+  #telemetry .val { font-size: 18px; font-weight: 500; letter-spacing: -.01em; }
+  #telemetry .lab { font-size: 9px; letter-spacing: .24em; text-transform: uppercase; color: var(--ink-dim); margin-top: 3px; }
+
+  /* Control panel — bottom-left, stacked cards. */
+  #panel { position: fixed; bottom: 22px; left: 26px; z-index: 12; width: 264px; }
+  .card {
+    background: var(--glass);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid var(--glass-edge);
+    border-radius: 14px;
+    padding: 14px 16px 16px;
+    box-shadow: 0 18px 40px rgba(0,0,0,.45);
+  }
+  .card h2 { font-family: var(--mono); font-size: 10px; letter-spacing: .3em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 12px; }
+  .field { margin-top: 12px; }
+  .field > .head { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); }
+  .field > .head .num { color: var(--c1); font-weight: 500; }
+  .field .val-line { font-family: var(--mono); font-size: 10px; color: var(--ink-dim); margin-top: 6px; }
+
+  /* Range sliders share one look; accent track uses the scene palette. */
+  input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 3px; background: rgba(255,255,255,.1); outline: none; margin-top: 10px; cursor: pointer; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--c1); box-shadow: 0 0 0 3px rgba(41,240,255,.15); cursor: pointer; }
+  input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border: none; border-radius: 50%; background: var(--c1); cursor: pointer; }
+
+  /* Toggle switch — real <button role="switch"> so screen readers announce
+     checked/unchecked instead of only reading a colored dot. */
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; }
+  .toggle .name { font-family: var(--mono); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); }
+  .switch { position: relative; width: 40px; height: 22px; border-radius: 999px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.15); cursor: pointer; transition: background .2s ease; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #cbd6ee; transition: transform .2s ease, background .2s ease; }
+  .switch[aria-checked="true"] { background: linear-gradient(90deg, var(--c1), var(--c2)); }
+  .switch[aria-checked="true"]::after { transform: translateX(18px); background: #fff; }
+
+  /* Gesture hint — bottom-right, small and quiet. */
+  #hint { position: fixed; bottom: 24px; right: 26px; z-index: 10; text-align: right; font-family: var(--mono); font-size: 10px; letter-spacing: .12em; color: var(--ink-dim); line-height: 1.9; }
+  #hint b { color: var(--ink); font-weight: 500; }
+
+  /* Hide button — top-right corner of the scene, above telemetry on desktop. */
+  #hideBtn { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 15; font-family: var(--mono); font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink-dim); background: rgba(9,13,24,.5); border: 1px solid var(--glass-edge); border-radius: 999px; padding: 8px 16px; cursor: pointer; backdrop-filter: blur(10px); }
+  #hideBtn:hover { color: var(--ink); }
+
+  /* When the UI is collapsed, everything under z-10 disappears and only a small
+     round "show" button remains at the top so the scene can be seen clean. */
+  body.ui-hidden .ui, body.ui-hidden #panel { opacity: 0; pointer-events: none; }
+  #showBtn { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 16; display: none; font-family: var(--mono); font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--ink); background: rgba(9,13,24,.6); border: 1px solid var(--glass-edge); border-radius: 999px; padding: 8px 16px; cursor: pointer; backdrop-filter: blur(10px); }
+  body.ui-hidden #showBtn { display: block; }
+
+  /* ---- Phone layout -------------------------------------------------------
+     On narrow screens the panels collapse into a single bottom sheet and the
+     scene gets the whole frame. Title/telemetry/hint drop to keep things legible. */
+  @media (max-width: 720px) {
+    #title { top: 92px; left: 18px; right: 18px; max-width: none; }
+    #title h1 { font-size: 26px; }
+    #telemetry { display: none; }                 /* telemetry moves into the sheet */
+    #hint { display: none; }
+    #panel { top: auto; bottom: 0; left: 0; right: 0; width: auto; z-index: 20;
+      border-radius: 16px 16px 0 0; margin: 0; padding: 14px 18px calc(14px + env(safe-area-inset-bottom)); }
+    #panel .card { padding: 12px 16px 14px; }
+    /* Collapsible accordion: only the chosen section opens. */
+    #panel .section { margin-top: 10px; }
+    #panel .section > h2 { cursor: pointer; user-select: none; }
+    #panel .section.open > .body { display: block; }
+    #panel .section > .body { display: none; }
+    #hideBtn { top: 14px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) { /* respect accessibility settings */
+    * { animation-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- Loading state: honest progress while modules resolve. -->
+  <div id="loader" role="status" aria-live="polite">
+    <div class="label">Igniting scene</div>
+    <div class="track"><div class="fill" id="loadFill"></div></div>
+  </div>
+
+  <!-- Failure state: readable message instead of a stuck spinner. -->
+  <div id="failure" role="alert">
+    <div class="box">
+      <h1>Scene unavailable</h1>
+      <p id="failureText">We couldn't start the scene. Three.js failed to load, or your browser has no WebGL context.</p>
+    </div>
+  </div>
+
+  <!-- Header: collapse the whole interface. -->
+  <button id="hideBtn" aria-label="Hide interface">Hide interface</button>
+  <button id="showBtn" aria-label="Show interface">Show interface</button>
+
+  <!-- Title card. -->
+  <div id="title" class="ui">
+    <div class="kicker">Procedural Scene</div>
+    <h1>Aurora Knot</h1>
+    <p>A hand-written GLSL field of folded light, drifting through a GPU-driven particle cloud.</p>
+  </div>
+
+  <!-- Live telemetry. -->
+  <div id="telemetry" class="ui">
+    <div style="font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-dim)">Telemetry</div>
+    <div class="row">
+      <div class="cell"><div class="val" id="telFps">—</div><div class="lab">fps</div></div>
+      <div class="cell"><div class="val" id="telDraws">—</div><div class="lab">draws</div></div>
+      <div class="cell"><div class="val" id="telTime">0.0s</div><div class="lab">scene time</div></div>
+    </div>
+  </div>
+
+  <!-- Control panel. -->
+  <div id="panel" class="ui">
+    <div class="card">
+      <h2>Controls</h2>
+
+      <div class="section open">
+        <h2 data-section="bloom">Bloom</h2>
+        <div class="body">
+          <div class="field">
+            <div class="head"><span>Strength</span><span class="num" id="bloomStrVal">1.40</span></div>
+            <input type="range" id="bloomStr" min="0" max="3" step="0.01" value="1.4" aria-label="Bloom strength">
+            <div class="val-line">Emissive glow intensity</div>
+          </div>
+          <div class="field">
+            <div class="head"><span>Threshold</span><span class="num" id="bloomThreshVal">0.85</span></div>
+            <input type="range" id="bloomThresh" min="0" max="2" step="0.01" value="0.85" aria-label="Bloom threshold">
+            <div class="val-line">Brightness that starts to glow</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2 data-section="field">Field</h2>
+        <div class="body">
+          <div class="field">
+            <div class="head"><span>Particle Speed</span><span class="num" id="spdVal">1.00</span></div>
+            <input type="range" id="spd" min="0" max="3" step="0.01" value="1" aria-label="Particle speed">
+            <div class="val-line">How fast the cloud orbits</div>
+          </div>
+          <div class="field">
+            <div class="head"><span>Hue Shift</span><span class="num" id="hueVal">0.00</span></div>
+            <input type="range" id="hue" min="-1" max="1" step="0.01" value="0" aria-label="Hue shift">
+            <div class="val-line">Drifts the aurora palette</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2 data-section="look">Camera &amp; Features</h2>
+        <div class="body">
+          <div class="field">
+            <div class="head"><span>Mouse Sensitivity</span><span class="num" id="sensVal">1.00</span></div>
+            <input type="range" id="sens" min="0.1" max="3" step="0.01" value="1" aria-label="Mouse sensitivity">
+            <div class="val-line">Orbit response to the pointer</div>
+          </div>
+          <div class="toggle">
+            <span class="name">Bloom</span>
+            <button class="switch" role="switch" aria-checked="true" id="togBloom"></button>
+          </div>
+          <div class="toggle">
+            <span class="name">Particles</span>
+            <button class="switch" role="switch" aria-checked="true" id="togParts"></button>
+          </div>
+          <div class="toggle">
+            <span class="name">Pause</span>
+            <button class="switch" role="switch" aria-checked="false" id="togPause"></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gesture hint. -->
+  <div id="hint" class="ui">
+    <div><b>Drag</b> to orbit</div>
+    <div><b>Scroll</b> to zoom</div>
+    <div><b>Tab</b> controls · <b>H</b> hide UI</div>
+  </div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/"
+  }
+}
+</script>
+
+<script type="module">
+/* ---------------------------------------------------------------------------
+   Aurora Knot — one file, no build step.
+   Everything (geometry, color, motion, light) is generated in code.
+   The only network request is the Three.js module above.
+--------------------------------------------------------------------------- */
+import * as THREE from 'three';
+// r160 ships the postprocessing passes under examples/jsm/postprocessing/ (not
+// the older effects/ or js/addons/ paths), so map three/addons/ there.
+import { EffectComposer } from 'three/addons/EffectComposer.js';
+import { RenderPass } from 'three/addons/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/UnrealBloomPass.js';
+
+const canvas = document.getElementById('scene');
+const loader = document.getElementById('loader');
+const loadFill = document.getElementById('loadFill');
+const failure = document.getElementById('failure');
+const failureText = document.getElementById('failureText');
+
+/* ---- Failure handling -----------------------------------------------------
+   If the import graph never resolves, or WebGL can't initialize, we surface a
+   readable message instead of leaving the loader spinning forever. */
+let failed = false;
+function fail(msg) {
+  if (failed) return;
+  failed = true;
+  loader.classList.add('done');
+  failureText.textContent = msg || 'We couldn\'t start the scene.';
+  failure.classList.add('on');
+}
+
+/* Wrap module import so a network failure is caught before it crashes us. */
+const imports = {}
+Promise.all([
+  Promise.resolve().then(() => import('three')).then(m => { imports.three = m; })
+]).catch(err => { fail('Could not load the Three.js module: ' + err.message); })
+  // Wrap initScene so a WebGL/shader failure surfaces the failure panel instead
+  // of leaving the loader frozen. The try/catch is intentional, not debug cruft.
+  .finally(() => { try { initScene(); } catch (e) { fail('Scene error: ' + (e && e.message)); } });
+
+function initScene() {
+  const THREE = imports.three;
+  if (!THREE) return; // fail() already reported above
+
+  /* ---- Renderer ---------------------------------------------------------
+     Power-optimized: a capped DPR keeps Retina panels from running the bloom
+     chain at four times the pixel cost. */
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.autoClear = false; // composer owns the clear each pass
+
+  const gl = renderer.getContext();
+  // Probe the context so a missing-WebGL browser shows the failure panel, not a
+  // frozen canvas. getContext() is null when WebGL isn't supported.
+  if (!gl || typeof gl.getParameter !== 'function') {
+    fail('This browser has no WebGL context.'); return;
+  }
+
+  /* ---- Scene & camera --------------------------------------------------- */
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05060c);
+
+  const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 200);
+  camera.position.set(0, 0, 8);
+
+  /* ---- Hero object: torus knot with a custom aurora shader ---------------
+     Vertex shader displaces the surface with a low-frequency sine "breath" so
+     the shape reads as folded light. The fragment shader maps world-space Y
+     plus time into a drifting hue; emissive terms push some faces past bloom's
+     threshold so they bleed glow. */
+  const heroUniforms = {
+    uTime:    { value: 0 },
+    uHue:     { value: 0 },      // control-driven palette drift
+    uSpeed:   { value: 1 }
+  };
+
+  const heroMat = new THREE.ShaderMaterial({
+    uniforms: heroUniforms,
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      uniform float uSpeed;
+      varying vec3 vPos;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+
+      // A cheap value noise from sines — no texture needed.
+      float wave(vec3 p) {
+        return sin(p.x * 1.7 + uTime * uSpeed)
+             + sin(p.y * 2.3 + uTime * uSpeed * 1.3)
+             + sin(p.z * 1.9 + uTime * uSpeed * 0.8);
+      }
+
+      void main() {
+        // Breathing displacement: pushes vertices along their normal by a
+        // slow sine field, so the knot looks like it's inhaling light.
+        float disp = wave(position) * 0.18;
+        vec3 pos = position + normal * disp;
+
+        vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+        vPos = pos.xyz;
+        vNormal = normalize(normalMatrix * normal);
+        vViewDir = normalize(-mvPos.xyz);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      varying vec3 vPos;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+
+      uniform float uTime;
+      uniform float uHue;
+      uniform float uSpeed;
+
+      // HSL-ish helper: build an aurora color from a hue value in [0,1].
+      vec3 aurora(float t) {
+        // Three palette anchors (cyan -> violet -> magenta) blended by a
+        // time-drifting position so the color slides across the surface.
+        float s = fract(t + uHue);
+        vec3 a = vec3(0.16, 0.94, 0.99);   // cyan
+        vec3 b = vec3(0.48, 0.36, 1.00);   // violet
+        vec3 c = vec3(1.00, 0.36, 0.76);   // magenta
+        return mix(mix(a, b, smoothstep(0.0, 0.55, s)),
+                   mix(b, c, smoothstep(0.55, 1.0, s)),
+                   smoothstep(0.4, 0.95, s));
+      }
+
+      void main() {
+        // Hue travels with world-space height plus time — this is what makes
+        // the aurora "walk" down the folded surface instead of painting flat.
+        float band = vPos.y * 0.28 + uTime * uSpeed * 0.25;
+        vec3 base = aurora(band);
+
+        // Simple lambert-ish wrap lighting from a soft overhead key light so
+        // the folds read in 3D and bright faces can exceed bloom's threshold.
+        vec3 light = normalize(vec3(0.4, 1.0, 0.6));
+        float nrm = dot(normalize(vNormal), light);
+        float diff = 0.5 + 0.5 * nrm;
+
+        // Fresnel rim adds a cooler edge glow toward the viewer.
+        float rim = pow(1.0 - dot(normalize(vNormal), normalize(vViewDir)), 2.0);
+
+        vec3 color = base * (0.6 + 0.9 * diff) + vec3(rim) * 0.5;
+        // Emissive boost: brightens the crest faces so bloom makes them glow.
+        gl_FragColor = vec4(color * (1.0 + 0.8 * diff), 1.0);
+      }
+    `
+  });
+
+  const hero = new THREE.Mesh(new THREE.TorusKnotGeometry(1.6, 0.5, 160, 24, 2, 3), heroMat);
+  scene.add(hero);
+
+  /* ---- Particle field ----------------------------------------------------
+     Thousands of points in ONE BufferGeometry (never individual meshes). All
+     motion runs on the GPU: each vertex carries orbit parameters (radius,
+     phase, tilt) and advances its angle with uTime. Size and opacity are tied
+     to camera distance so near particles read big/bright and far ones fade —
+     this reads as depth, not confetti. */
+  const COUNT = 4000;
+  const geo = new THREE.BufferGeometry();
+  const rng = () => (Math.random() * 2 - 1); // tiny local RNG, no imports needed
+  const phases = new Float32Array(COUNT * 3); // x=radius y=phase z=tilt(inclination)
+  const sizes = new Float32Array(COUNT);
+  for (let i = 0; i < COUNT; i++) {
+    // Distribute in a spherical shell, denser near the hero for depth.
+    const r = 2.4 + Math.abs(rng()) * 6.5;
+    const phase = Math.random() * Math.PI * 2;
+    const tilt = Math.acos(2 * Math.random() - 1);
+    phases[i * 3] = r;
+    phases[i * 3 + 1] = phase;
+    phases[i * 3 + 2] = tilt;
+    sizes[i] = 0.6 + Math.random() * 1.4; // base point size spread
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 3));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+
+  const partMat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uTime: heroUniforms.uTime, // share so particle clock stays in one uniform
+      uSpeed: heroUniforms.uSpeed,
+      uHue: heroUniforms.uHue,
+      uPixelRatio: { value: renderer.getPixelRatio() }
+    },
+    vertexShader: /* glsl */`
+      attribute vec3 aPhase;   // radius, phase, tilt
+      attribute float aSize;
+      uniform float uTime;
+      uniform float uSpeed;
+      uniform float uHue;
+      uniform float uPixelRatio;
+      varying float vDist;
+
+      void main() {
+        float r = aPhase.x;
+        float phase = aPhase.y + uTime * uSpeed * 0.35; // advance angle over time (GPU-side orbit)
+        float tilt = aPhase.z;
+
+        // Spherical orbit from the per-particle parameters.
+        vec3 dir = vec3(
+          cos(tilt) * sin(phase),
+          sin(tilt) * 0.6,                       // flatten slightly for a disk-ish halo
+          cos(tilt) * cos(phase)
+        );
+        vec3 pos = dir * r;
+
+        vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
+        vDist = -mvPos.z; // distance to camera along view axis (positive away)
+
+        // Size attenuates with distance: nearer points read larger.
+        gl_PointSize = aSize * uPixelRatio * (220.0 / -mvPos.z);
+        gl_Position = projectionMatrix * mvPos;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      precision highp float;
+      varying float vDist;
+      uniform float uHue;
+
+      vec3 aurora(float t) {
+        float s = fract(t + uHue);
+        vec3 a = vec3(0.16, 0.94, 0.99);
+        vec3 b = vec3(0.48, 0.36, 1.00);
+        vec3 c = vec3(1.00, 0.36, 0.76);
+        return mix(mix(a, b, smoothstep(0.0, 0.55, s)),
+                   mix(b, c, smoothstep(0.55, 1.0, s)),
+                   smoothstep(0.4, 0.95, s));
+      }
+
+      void main() {
+        // Soft round point sprite from the screen-space distance to center.
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length(uv);
+        if (d > 0.5) discard;
+        float alpha = smoothstep(0.5, 0.0, d);
+
+        // Far particles fade into the background — reads as depth haze.
+        float fade = clamp(1.0 - (vDist - 3.0) / 14.0, 0.0, 1.0);
+        vec3 color = aurora(vDist * 0.15) * 1.4;
+        gl_FragColor = vec4(color, alpha * fade * 0.8);
+      }
+    `
+  });
+
+  const particles = new THREE.Points(geo, partMat);
+  scene.add(particles);
+
+  /* ---- Post processing: UnrealBloom -------------------------------------
+     The bloom pass blurs bright pixels and adds them back; because the hero's
+     crest faces exceed the threshold, they bleed a visible glow on dark bg. */
+  const composer = new EffectComposer(renderer);
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.4, 0.6, 0.85);
+
+  /* ---- Camera control: damped pointer orbit + eased scroll zoom ----------
+     Horizontal and vertical sensitivity are separate; vertical is gentler so
+     orbiting feels natural. Values lerp toward their targets for smoothness
+     (never snapping). The scene keeps a slow idle drift when the pointer is still. */
+  const cam = {
+    targetYaw: 0, targetPitch: 0.15, yaw: 0, pitch: 0.15,
+    radius: 8, targetRadius: 8,
+    dragging: false, lastX: 0, lastY: 0,
+    pxPerRadH: 1.6, pxPerRadV: 1.0 // vertical gentler than horizontal
+  };
+
+  addEventListener('pointerdown', e => {
+    cam.dragging = true; cam.lastX = e.clientX; cam.lastY = e.clientY;
+  });
+  addEventListener('pointermove', e => {
+    if (!cam.dragging) return;
+    const dx = e.clientX - cam.lastX, dy = e.clientY - cam.lastY;
+    cam.lastX = e.clientX; cam.lastY = e.clientY;
+    // Separate h/v sensitivity via the camera's per-axis multipliers.
+    cam.targetYaw   -= dx / cam.pxPerRadH * 0.008 * sens.value;
+    cam.targetPitch += dy / cam.pxPerRadV * 0.006 * sens.value;
+    cam.targetPitch = Math.max(-1.2, Math.min(1.2, cam.targetPitch));
+  });
+  addEventListener('pointerup', () => cam.dragging = false);
+
+  // Wheel zoom: ease the target radius so a fast scroll never jerks the view.
+  addEventListener('wheel', e => {
+    e.preventDefault();
+    cam.targetRadius += Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 120) * 0.01;
+    cam.targetRadius = Math.max(4.5, Math.min(16, cam.targetRadius));
+  }, { passive: false });
+
+  /* ---- Controls wired to uniforms / passes ------------------------------ */
+  const el = id => document.getElementById(id);
+  const bloomStr  = el('bloomStr'),  bloomThresh = el('bloomThresh');
+  const spd       = el('spd'),        hue         = el('hue'), sens = el('sens');
+  const togBloom  = el('togBloom'),   togParts    = el('togParts'), togPause = el('togPause');
+
+  const sliders = {
+    bloomStr:  ['bloomStrVal', v => { bloom.strength = v; }],
+    bloomThresh:['bloomThreshVal', v => { bloom.threshold = v; }],
+    spd:       ['spdVal', v => { heroUniforms.uSpeed.value = v; }],
+    hue:       ['hueVal', v => { heroUniforms.uHue.value = v; }],
+    sens:      ['sensVal', v => {}] // sensitivity applied in pointer handler
+  };
+
+  function fmt(v){ return Number(v).toFixed(2); }
+  Object.keys(sliders).forEach(id => {
+    const [valId, apply] = sliders[id];
+    el(id).addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      el(valId).textContent = fmt(v);
+      apply(v);
+    });
+  });
+
+  // Toggles announce state via aria-checked (screen readers) and drive features.
+  function wireToggle(btn, onGet, onSet) {
+    btn.addEventListener('click', () => {
+      const checked = btn.getAttribute('aria-checked') === 'true';
+      btn.setAttribute('aria-checked', String(!checked));
+      onSet(!checked);
+    });
+  }
+  wireToggle(togBloom, () => bloom.enabled, e => { bloom.enabled = e; renderPass.enabled = e; });
+  wireToggle(togParts, () => true, e => { particles.visible = e; });
+  wireToggle(togPause, () => false, e => { paused = e; });
+
+  // Accordion on phone: tapping a section header opens just that one.
+  document.querySelectorAll('#panel .section > h2').forEach(h => {
+    h.addEventListener('click', () => h.parentElement.classList.toggle('open'));
+  });
+
+  /* ---- Interface show/hide + keyboard shortcut -------------------------- */
+  const uiEls = document.querySelectorAll('.ui, #panel');
+  const hideBtn = el('hideBtn'), showBtn = el('showBtn');
+  let uiVisible = true;
+  function setUI(v) {
+    uiVisible = v;
+    document.body.classList.toggle('ui-hidden', !v);
+    hideBtn.style.display = v ? '' : 'none';
+  }
+  hideBtn.addEventListener('click', () => setUI(false));
+  showBtn.addEventListener('click', () => setUI(true));
+  addEventListener('keydown', e => {
+    if (e.key === 'h' || e.key === 'H') setUI(!uiVisible);
+  });
+
+  /* ---- Telemetry readout ------------------------------------------------ */
+  const telFps = el('telFps'), telDraws = el('telDraws'), telTime = el('telTime');
+  let fpsAccum = 0, fpsFrames = 0, lastFpsUpdate = performance.now();
+
+  /* ---- Frame loop with a 60fps cap & DPR guard --------------------------
+     requestAnimationFrame fires faster than 60 on high-refresh displays, so we
+     gate our update with an elapsed-time accumulator. Per-frame CPU stays tiny:
+     animated state lives in uniforms, not JS arrays. */
+  let paused = false;
+  let lastFrame = performance.now();
+  const FRAME_MS = 1000 / 60;
+  let clockTime = 0;
+
+  function render(now) {
+    requestAnimationFrame(render);
+
+    // Cap at ~60fps regardless of display refresh rate. The very first callback
+    // always renders so the loader lifts on a real frame, not a skipped one.
+    if (firstFrame || (now - lastFrame) >= FRAME_MS * 0.85) {
+      const dt = now - lastFrame;
+      lastFrame = now;
+
+      const step = Math.min((now - clockTime) / 1000, 0.05); // clamp to avoid jumps
+      clockTime = now;
+
+      if (!paused) {
+        heroUniforms.uTime.value += step;
+        // Idle life: a slow auto-orbit so the scene moves even when untouched.
+        cam.targetYaw += step * 0.12;
+      }
+
+      // Damped orbit: lerp toward targets for a smooth, never-snapping feel.
+      const damp = 0.08;
+      cam.yaw += (cam.targetYaw - cam.yaw) * damp;
+      cam.pitch += (cam.targetPitch - cam.pitch) * damp;
+      cam.radius += (cam.targetRadius - cam.radius) * 0.08; // eased zoom
+
+      // Apply to camera on a spherical path.
+      camera.position.x = Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.radius;
+      camera.position.y = Math.sin(cam.pitch) * cam.radius;
+      camera.position.z = Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.radius;
+      camera.lookAt(0, 0, 0);
+
+      composer.render();
+
+      // Telemetry (updated ~4x/sec to avoid per-frame DOM cost).
+      fpsAccum += dt; fpsFrames++;
+      if (now - lastFpsUpdate > 250) {
+        const fps = Math.round(1000 / (fpsAccum / fpsFrames));
+        telFps.textContent = String(fps);
+        telDraws.textContent = String(renderer.info.render.calls);
+        telTime.textContent = heroUniforms.uTime.value.toFixed(1) + 's'; // scene time in seconds
+        fpsAccum = 0; fpsFrames = 0; lastFpsUpdate = now;
+      }
+
+      // Honest loading: fade the loader out on the first rendered frame.
+      if (firstFrame) {
+        firstFrame = false;
+        loader.classList.add('done');
+      }
+    }
+  }
+
+  /* ---- Resize: keep camera, renderer, composer in sync ------------------ */
+  addEventListener('resize', () => {
+    const w = innerWidth, h = innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(w, h);
+    composer.setSize(w, h);
+    partMat.uniforms.uPixelRatio.value = renderer.getPixelRatio();
+  });
+
+  /* ---- First frame: lift the loader -------------------------------------
+     The loader fades on the very first rendered frame, so it reads as honest
+     progress rather than a decorative spinner. */
+  let firstFrame = true;
+
+  // Kick off the loop. The first iteration fires the fade-out.
+  requestAnimationFrame(render);
+
+  /* ---- Teardown: dispose GPU resources ----------------------------------
+     Three.js won't free buffers/materials for us; we do it on unload so a
+     SPA-style reload doesn't leak VRAM. */
+  function dispose() {
+    geo.dispose(); heroMat.dispose(); partMat.dispose();
+  }
+  addEventListener('beforeunload', () => {
+    dispose();
+    renderer.dispose();
+    composer.dispose();
+  });
+
+  // Expose for debugging only.
+  window.__scene = { hero, particles, bloom, uniforms: heroUniforms };
+}
+</script>
+</body>
+</html>
