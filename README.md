@@ -30,6 +30,14 @@ The slug is also the thumbnail prefix (`thumbs/<slug>-<model>.png`) and the
 
 Deployed from the `main` branch via GitHub Pages. Every push rebuilds it.
 
+## Fonts
+
+The shell sets in JetBrains Mono for technical text and IBM Plex Sans for
+prose, both self-hosted in `fonts/`. IBM Plex Sans Thai covers the Thai
+prompts, which have no monospaced face. All three families are under the
+SIL Open Font License; the license files travel with the fonts in
+`fonts/`. See `fonts/README.md`.
+
 ## Open it locally
 
 No build step, no dependencies. Either works:
@@ -114,6 +122,7 @@ llm-3d-tests/
   app.css           shell styles
   app.js            page logic (reads window.MANIFEST, window.COLLECTIONS, window.PROMPTS)
   thumbs/           <collection>-<model>.png
+  fonts/            JetBrains Mono, IBM Plex Sans, IBM Plex Sans Thai (OFL)
   tools/
     capture.mjs          shared headless-Chrome capture helpers
     sync-collection.mjs  add missing results + thumbnails (the sync skill)

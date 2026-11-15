@@ -146,6 +146,9 @@
       var prompts = window.PROMPTS || {};
       promptText.textContent = prompts[slug] ||
         '[prompts.js missing] Add prompts.js next to index.html with a string per collection.';
+      /* Thai has no monospaced face, so a Thai prompt reads better in the
+         proportional face than with Latin words set in mono beside it. */
+      promptText.classList.toggle('is-thai', /[\u0E00-\u0E7F]/.test(promptText.textContent));
 
       buildGrid(slug);
       var n = modelsOf(slug).length;
