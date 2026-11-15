@@ -15,6 +15,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+/* The scene variants live in versions.js so the pages and the tools read the
+   same list. Each variant owns a folder named after its slug. */
+export const VERSIONS = require(path.join(ROOT, 'versions.js'));
+
 export function resolvePlaywright() {
   try {
     return require('playwright');
@@ -67,17 +71,18 @@ export async function captureScene(browser, job, outDir, opts = {}) {
   }
 }
 
-/* List every result file on disk as { v, slug, file, bytes }. */
+/* List every result file on disk as { v, slug, file, bytes }. The v is the
+   variant slug, which is also the folder name and the thumbnail prefix. */
 export function scanScenes(fs) {
   const jobs = [];
-  for (const v of ['v1', 'v2']) {
-    const dir = path.join(ROOT, v);
+  for (const version of VERSIONS) {
+    const dir = path.join(ROOT, version.slug);
     let names = [];
     try { names = fs.readdirSync(dir); } catch { continue; }
     for (const f of names.sort()) {
       if (!f.endsWith('.html')) continue;
       const file = path.join(dir, f);
-      jobs.push({ v, slug: f.slice(0, -5), file, bytes: fs.statSync(file).size });
+      jobs.push({ v: version.slug, slug: f.slice(0, -5), file, bytes: fs.statSync(file).size });
     }
   }
   return jobs;

@@ -24,32 +24,22 @@
       </svg>
       <span>3D scene bench</span>
     </a>
-    <fieldset class="version-switch">
-      <legend class="visually-hidden">Prompt version</legend>
-      <span class="version-switch-label" aria-hidden="true">Prompt</span>
-      <div class="version-options">
-        <label class="version-option">
-          <input type="radio" name="version" value="1" aria-label="Prompt v1" checked>
-          <span aria-hidden="true">v1</span>
-        </label>
-        <label class="version-option">
-          <input type="radio" name="version" value="2" aria-label="Prompt v2">
-          <span aria-hidden="true">v2</span>
-        </label>
-      </div>
-    </fieldset>
+    <div class="version-picker">
+      <label class="version-picker-label" for="version-select">Scene</label>
+      <select class="select select-compact" id="version-select"></select>
+    </div>
   </div>
 </header>
 
 <main class="page" id="main">
   <section class="prompt-section" aria-labelledby="prompt-heading">
     <div class="section-head">
-      <h1 id="prompt-heading">Prompt v1</h1>
+      <h1 id="prompt-heading">Aurora torus</h1>
       <p class="lede">One prompt, sent to every model below. Each card opens the model's raw HTML, untouched.</p>
     </div>
     <div class="prompt-panel">
       <div class="prompt-toolbar">
-        <span class="prompt-file" id="prompt-file" translate="no">prompt-v1.txt</span>
+        <span class="prompt-file" id="prompt-file" translate="no">prompts.js</span>
         <button type="button" class="btn btn-ghost" id="copy-prompt">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="9" y="9" width="12" height="12" rx="2"/>
@@ -78,6 +68,7 @@
 
 <script src="prompts.js"></script>
 <script src="manifest.js"></script>
+<script src="versions.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

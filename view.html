@@ -20,11 +20,13 @@
       <span>All models</span>
     </a>
     <div class="viewer-id">
-      <span class="version-chip" id="viewer-version" data-version="1">v1</span>
+      <span class="version-chip" id="viewer-version" data-index="0">Aurora torus</span>
       <span class="viewer-model" id="viewer-model" translate="no"></span>
     </div>
     <div class="viewer-controls">
-      <label class="visually-hidden" for="model-select">Switch model, same prompt version</label>
+      <label class="visually-hidden" for="variant-select">Switch scene variant</label>
+      <select class="select select-compact" id="variant-select"></select>
+      <label class="visually-hidden" for="model-select">Switch model, same scene variant</label>
       <select class="select" id="model-select"></select>
       <a class="btn raw-link" id="raw-link" href="#" target="_blank" rel="noopener">
         <span>Raw file</span>
@@ -65,6 +67,7 @@
 </main>
 
 <script src="manifest.js"></script>
+<script src="versions.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

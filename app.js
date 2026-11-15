@@ -3,38 +3,71 @@
    Classic script, no modules, so everything works over file:// too.
 
    URL state:
-   - http(s): query string (?v=1&model=slug) via pushState, Back works.
+   - http(s): query string (?v=<variant>&model=slug) via pushState, Back works.
    - file://: Chrome forbids pushState with a changed URL on null origins,
-     so state moves to the hash (#v=1&model=slug) instead. Query params are
-     still read on load, so shared links work in both directions.
+     so state moves to the hash (#v=<variant>&model=slug) instead. Query params
+     are still read on load, so shared links work in both directions.
+
+   A scene variant is identified by its slug. The slug is also the folder
+   name on disk and the thumbnail prefix. versions.js holds the list.
    ========================================================================= */
 
 (function () {
   'use strict';
 
-  /* The model list lives in manifest.js, generated from the files in v1/ and
-     v2/ by tools/sync-collection.mjs. Version + slug is the unique key; some
-     models appear in both versions. */
-  var MANIFEST = window.MANIFEST || { 1: [], 2: [] };
+  var VERSIONS = window.VERSIONS || [];
+  var MANIFEST = window.MANIFEST || {};
 
   var KB = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
   function fmtBytes(b) { return KB.format(b / 1024) + ' KB'; }
 
-  function findModel(v, slug) {
-    var list = MANIFEST[v] || [];
-    for (var i = 0; i < list.length; i++) if (list[i].slug === slug) return list[i];
+  function versionBySlug(slug) {
+    for (var i = 0; i < VERSIONS.length; i++) if (VERSIONS[i].slug === slug) return VERSIONS[i];
     return null;
   }
 
-  function otherVersion(v, slug) {
-    var other = v === '1' ? '2' : '1';
-    return findModel(other, slug) ? other : null;
+  /* Accept the old numbered keys so links made before the rename still work. */
+  function resolveSlug(value) {
+    if (!value) return null;
+    if (versionBySlug(value)) return value;
+    for (var i = 0; i < VERSIONS.length; i++) {
+      if (String(VERSIONS[i].legacy) === String(value)) return VERSIONS[i].slug;
+    }
+    return null;
   }
 
-  function scenePath(v, slug) { return 'v' + v + '/' + slug + '.html'; }
-  function viewerHref(v, slug) { return 'view.html?v=' + v + '&model=' + encodeURIComponent(slug); }
-  function thumbPath(v, slug) { return 'thumbs/v' + v + '-' + slug + '.png'; }
+  function versionIndex(slug) {
+    for (var i = 0; i < VERSIONS.length; i++) if (VERSIONS[i].slug === slug) return i;
+    return 0;
+  }
+
+  function defaultSlug() {
+    return VERSIONS.length ? VERSIONS[0].slug : '';
+  }
+
+  function modelsOf(slug) { return MANIFEST[slug] || []; }
+
+  function findModel(slug, model) {
+    var list = modelsOf(slug);
+    for (var i = 0; i < list.length; i++) if (list[i].slug === model) return list[i];
+    return null;
+  }
+
+  /* The other variant, when the same model was run there too. */
+  function otherVersion(slug, model) {
+    for (var i = 0; i < VERSIONS.length; i++) {
+      if (VERSIONS[i].slug === slug) continue;
+      if (findModel(VERSIONS[i].slug, model)) return VERSIONS[i].slug;
+    }
+    return null;
+  }
+
+  function scenePath(slug, model) { return slug + '/' + model + '.html'; }
+  function viewerHref(slug, model) {
+    return 'view.html?v=' + encodeURIComponent(slug) + '&model=' + encodeURIComponent(model);
+  }
+  function thumbPath(slug, model) { return 'thumbs/' + slug + '-' + model + '.png'; }
 
   /* ------------------------------------------------------------ URL state */
 
@@ -71,7 +104,7 @@
   /* ============================================================ index page */
 
   function initIndex() {
-    var radios = Array.prototype.slice.call(document.querySelectorAll('input[name="version"]'));
+    var versionSelect = document.getElementById('version-select');
     var heading = document.getElementById('prompt-heading');
     var fileLabel = document.getElementById('prompt-file');
     var promptText = document.getElementById('prompt-text');
@@ -83,42 +116,62 @@
     var lastKey = null;
     var copyTimer = null;
 
+    if (versionSelect) {
+      versionSelect.innerHTML = '';
+      VERSIONS.forEach(function (v) {
+        var o = document.createElement('option');
+        o.value = v.slug;
+        o.textContent = v.label;
+        versionSelect.appendChild(o);
+      });
+    }
+
     function apply() {
       var state = readState();
-      var v = state.v === '2' ? '2' : '1';
-      if (v === lastKey) return;
-      lastKey = v;
+      var slug = resolveSlug(state.v) || defaultSlug();
+      if (slug === lastKey) return;
+      lastKey = slug;
 
-      radios.forEach(function (r) { r.checked = r.value === v; });
-      heading.textContent = 'Prompt v' + v;
-      fileLabel.textContent = 'prompt v' + v;
-      document.title = 'Prompt v' + v + ' · 3D scene bench';
+      var version = versionBySlug(slug);
+      var label = version ? version.label : slug;
+
+      if (versionSelect) {
+        versionSelect.value = slug;
+        versionSelect.setAttribute('data-index', String(versionIndex(slug)));
+      }
+      heading.textContent = label;
+      fileLabel.textContent = 'prompts.js · ' + slug;
+      document.title = label + ' · 3D scene bench';
 
       var prompts = window.PROMPTS || {};
-      promptText.textContent = prompts['v' + v] ||
-        '[prompts.js missing] Add prompts.js next to index.html with PROMPT_V1 and PROMPT_V2.';
+      promptText.textContent = prompts[slug] ||
+        '[prompts.js missing] Add prompts.js next to index.html with a string per scene variant.';
 
-      buildGrid(v);
-      var n = MANIFEST[v].length;
+      buildGrid(slug);
+      var n = modelsOf(slug).length;
       count.textContent = n + (n === 1 ? ' model' : ' models');
     }
 
-    function buildGrid(v) {
-      if (!MANIFEST[v].length) {
-        grid.innerHTML = '<li class="grid-empty">No results for this prompt version yet. Drop the model HTML files into v' + v + '/ and run the sync skill.</li>';
+    function buildGrid(slug) {
+      var models = modelsOf(slug);
+      if (!models.length) {
+        grid.innerHTML = '<li class="grid-empty">No results for this scene variant yet. Drop the model HTML files into ' +
+          slug + '/ and run the sync skill.</li>';
         return;
       }
-      var html = MANIFEST[v].map(function (m, i) {
-        var other = otherVersion(v, m.slug);
+      var html = models.map(function (m, i) {
+        var other = otherVersion(slug, m.slug);
+        var otherLabel = other ? (versionBySlug(other) || {}).short : '';
         var alt = other
-          ? '<a class="card-alt" data-version="' + other + '" href="' + viewerHref(other, m.slug) + '" ' +
-            'aria-label="Open the prompt v' + other + ' render of ' + m.slug + '">v' + other + ' render ' + ARROW_NE + '</a>'
+          ? '<a class="card-alt" data-index="' + versionIndex(other) + '" href="' + viewerHref(other, m.slug) + '" ' +
+            'aria-label="Open the ' + otherLabel + ' render of ' + m.slug + '" title="' + otherLabel + ' render">' +
+            otherLabel + ' ' + ARROW_NE + '</a>'
           : '';
         return '<li class="card" style="animation-delay:' + Math.min(i * 24, 280) + 'ms">' +
-          '<a class="card-link" href="' + viewerHref(v, m.slug) + '">' +
+          '<a class="card-link" href="' + viewerHref(slug, m.slug) + '">' +
             '<span class="thumb">' +
-              '<img src="' + thumbPath(v, m.slug) + '" width="960" height="540" loading="lazy" ' +
-                'alt="Rendered preview of ' + m.slug + ' for prompt v' + v + '">' +
+              '<img src="' + thumbPath(slug, m.slug) + '" width="960" height="540" loading="lazy" ' +
+                'alt="Rendered preview of ' + m.slug + ' for ' + slug + '">' +
               '<span class="thumb-fallback" hidden>' + KNOT + '<span>No preview</span></span>' +
             '</span>' +
             '<span class="card-name" translate="no">' + m.slug + '</span>' +
@@ -130,7 +183,7 @@
       }).join('');
       grid.innerHTML = html;
 
-      Array.prototype.forEach.call(grid.querySelectorAll('img'), function (img) {
+      Array.prototype.slice.call(grid.querySelectorAll('img')).forEach(function (img) {
         img.addEventListener('error', function () {
           img.hidden = true;
           img.nextElementSibling.hidden = false;
@@ -138,13 +191,12 @@
       });
     }
 
-    radios.forEach(function (r) {
-      r.addEventListener('change', function () {
-        if (!r.checked) return;
-        writeState(new URLSearchParams({ v: r.value }), false);
+    if (versionSelect) {
+      versionSelect.addEventListener('change', function () {
+        writeState(new URLSearchParams({ v: versionSelect.value }), false);
         apply();
       });
-    });
+    }
 
     function copyDone(ok) {
       copyLabel.textContent = ok ? 'Copied' : 'Copy failed';
@@ -194,6 +246,7 @@
   function initViewer() {
     var backLink = document.getElementById('back-link');
     var versionChip = document.getElementById('viewer-version');
+    var variantSelect = document.getElementById('variant-select');
     var modelName = document.getElementById('viewer-model');
     var select = document.getElementById('model-select');
     var rawLink = document.getElementById('raw-link');
@@ -207,11 +260,21 @@
     var errorBack = document.getElementById('error-back');
 
     var lastKey = null;
-    var currentV = '1';
+    var currentSlug = defaultSlug();
     var currentSrc = null;
-    var selectV = null;
+    var selectVersion = null;
     var loadTimer = null;
     var isHttp = location.protocol === 'http:' || location.protocol === 'https:';
+
+    if (variantSelect) {
+      variantSelect.innerHTML = '';
+      VERSIONS.forEach(function (v) {
+        var o = document.createElement('option');
+        o.value = v.slug;
+        o.textContent = v.label;
+        variantSelect.appendChild(o);
+      });
+    }
 
     /* Navigate the iframe without adding a joint-session-history entry.
        Same-origin (http) lets us use location.replace, so the browser Back
@@ -231,21 +294,25 @@
       frame.src = src;
     }
 
-    function fillSelect(v, selected) {
-      if (selectV !== v) {
-        selectV = v;
+    function fillSelect(slug, selected) {
+      if (selectVersion !== slug) {
+        selectVersion = slug;
         select.innerHTML = '';
-        MANIFEST[v].forEach(function (m) {
+        var placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Choose a model';
+        select.appendChild(placeholder);
+        modelsOf(slug).forEach(function (m) {
           var o = document.createElement('option');
           o.value = m.slug;
           o.textContent = m.slug;
           select.appendChild(o);
         });
       }
-      if (selected && findModel(v, selected)) {
+      if (selected && findModel(slug, selected)) {
         select.value = selected;
       } else {
-        select.selectedIndex = -1;
+        select.value = '';
       }
     }
 
@@ -267,7 +334,7 @@
 
     /* Build the detail line with DOM nodes only. The slug comes from the
        URL, so it must never go through innerHTML. */
-    function showError(title, detailParts, chips, v) {
+    function showError(title, detailParts, chips, slug) {
       frame.hidden = true;
       currentSrc = 'about:blank';
       if (isHttp) {
@@ -298,7 +365,7 @@
         errorActions.appendChild(a);
       });
 
-      errorBack.href = 'index.html?v=' + v;
+      errorBack.href = 'index.html?v=' + encodeURIComponent(slug);
       errorPanel.hidden = false;
       errorPanel.focus();
       document.title = title + ' · 3D scene bench';
@@ -311,60 +378,72 @@
       return c;
     }
 
-    function modelChips(v) {
-      return MANIFEST[v].map(function (m) {
-        return { href: viewerHref(v, m.slug), label: m.slug };
+    function modelChips(slug) {
+      return modelsOf(slug).map(function (m) {
+        return { href: viewerHref(slug, m.slug), label: m.slug };
+      });
+    }
+
+    function variantChips() {
+      return VERSIONS.map(function (v) {
+        return {
+          href: 'index.html?v=' + encodeURIComponent(v.slug),
+          label: v.label + ' · ' + modelsOf(v.slug).length + ' models'
+        };
       });
     }
 
     function apply() {
       var state = readState();
-      var v = state.v === '2' ? '2' : '1';
-      var badVersion = state.v !== null && state.v !== '1' && state.v !== '2';
-      var slug = state.model || '';
-      var key = v + '/' + slug + (badVersion ? '/badv' : '');
+      var slug = resolveSlug(state.v);
+      var badVersion = state.v !== null && !slug;
+      var model = state.model || '';
+      var key = (slug || '?') + '/' + model + (badVersion ? '/badv' : '');
       if (key === lastKey) return;
       lastKey = key;
-      currentV = v;
+      currentSlug = slug || defaultSlug();
 
-      backLink.href = 'index.html?v=' + v;
-      versionChip.textContent = 'v' + v;
-      versionChip.setAttribute('data-version', v);
-      fillSelect(v, slug);
+      backLink.href = 'index.html?v=' + encodeURIComponent(currentSlug);
+      var version = versionBySlug(currentSlug);
+      versionChip.textContent = version ? version.short : currentSlug;
+      versionChip.setAttribute('data-index', String(versionIndex(currentSlug)));
+      versionChip.title = version ? version.label : currentSlug;
+      if (variantSelect) {
+        variantSelect.value = currentSlug;
+        variantSelect.setAttribute('data-index', String(versionIndex(currentSlug)));
+      }
+      fillSelect(currentSlug, model);
 
       if (badVersion) {
         modelName.textContent = '';
         showError(
-          'Unknown prompt version',
-          ['There is no prompt ', codeNode('v' + state.v), '. Pick a version to browse its results.'],
-          [
-            { href: 'index.html?v=1', label: 'Prompt v1 · ' + MANIFEST[1].length + ' models' },
-            { href: 'index.html?v=2', label: 'Prompt v2 · ' + MANIFEST[2].length + ' models' }
-          ],
-          v
+          'Unknown scene variant',
+          ['There is no scene variant ', codeNode(state.v), '. Pick one to browse its results.'],
+          variantChips(),
+          currentSlug
         );
         return;
       }
 
-      if (!slug) {
+      if (!model) {
         modelName.textContent = '';
         showError(
           'Pick a model',
-          ['This viewer shows one result at a time. Choose a prompt v' + v + ' result, or go back to the grid.'],
-          modelChips(v),
-          v
+          ['This viewer shows one result at a time. Choose a ' + currentSlug + ' result, or go back to the grid.'],
+          modelChips(currentSlug),
+          currentSlug
         );
         return;
       }
 
-      if (!findModel(v, slug)) {
-        modelName.textContent = slug;
-        modelName.title = slug;
+      if (!findModel(currentSlug, model)) {
+        modelName.textContent = model;
+        modelName.title = model;
         showError(
           'Model not found',
-          ['No result named ', codeNode(slug), ' exists for prompt v' + v + '. It may belong to the other prompt version, or the name is misspelled.'],
-          modelChips(v),
-          v
+          ['No result named ', codeNode(model), ' exists for ' + currentSlug + '. It may belong to the other scene variant, or the name is misspelled.'],
+          modelChips(currentSlug),
+          currentSlug
         );
         return;
       }
@@ -372,13 +451,13 @@
       /* Valid result */
       errorPanel.hidden = true;
       frame.hidden = false;
-      modelName.textContent = slug;
-      modelName.title = slug;
-      document.title = slug + ' · v' + v + ' · 3D scene bench';
-      rawLink.href = scenePath(v, slug);
-      frame.title = 'Rendered scene: ' + slug + ', prompt v' + v;
+      modelName.textContent = model;
+      modelName.title = model;
+      document.title = model + ' · ' + currentSlug + ' · 3D scene bench';
+      rawLink.href = scenePath(currentSlug, model);
+      frame.title = 'Rendered scene: ' + model + ', ' + currentSlug;
 
-      var src = scenePath(v, slug);
+      var src = scenePath(currentSlug, model);
       if (currentSrc !== src) {
         showStatus('Loading scene…');
         frameNavigate(src);
@@ -388,15 +467,28 @@
     select.addEventListener('change', function () {
       if (!select.value) return;
       if (isHttp) {
-        writeState(new URLSearchParams({ v: currentV, model: select.value }), false);
+        writeState(new URLSearchParams({ v: currentSlug, model: select.value }), false);
         apply();
       } else {
         /* file://: a full navigation keeps Back/Forward correct, since an
            in-place iframe src swap would add joint-history entries that
            Back would undo before the top-level state. */
-        location.assign(viewerHref(currentV, select.value));
+        location.assign(viewerHref(currentSlug, select.value));
       }
     });
+
+    if (variantSelect) {
+      variantSelect.addEventListener('change', function () {
+        var next = variantSelect.value;
+        if (!next || next === currentSlug) return;
+        var model = select.value || (readState().model || '');
+        /* Keep the same model when the other variant ran it too, otherwise
+           send the visitor to that variant's grid. */
+        location.assign(findModel(next, model)
+          ? viewerHref(next, model)
+          : 'index.html?v=' + encodeURIComponent(next));
+      });
+    }
 
     window.addEventListener('popstate', apply);
     window.addEventListener('hashchange', apply);
@@ -405,8 +497,8 @@
        matches the model actually on screen. */
     window.addEventListener('pageshow', function () {
       var st = readState();
-      var v = st.v === '2' ? '2' : '1';
-      if (st.model && findModel(v, st.model)) select.value = st.model;
+      var slug = resolveSlug(st.v) || defaultSlug();
+      if (st.model && findModel(slug, st.model)) select.value = st.model;
     });
     apply();
   }

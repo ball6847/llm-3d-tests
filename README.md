@@ -10,6 +10,19 @@ Two pages:
 - `view.html` renders one model's real HTML full-viewport in an iframe, with a
   sticky header to go back, switch models, or open the raw file.
 
+## Scene variants
+
+A variant is one prompt sent to many models. `versions.js` lists them, and each
+owns a folder named after its slug.
+
+| slug | label | folder | models |
+|---|---|---|---|
+| `aurora-torus` | Aurora torus | `aurora-torus/` | 17 |
+| `aurora-torus-with-control` | Aurora torus with control | `aurora-torus-with-control/` | 5 |
+
+The slug is also the thumbnail prefix (`thumbs/<slug>-<model>.png`) and the
+`?v=` value in the URL.
+
 ## Live site
 
 <https://ball6847.github.io/llm-3d-tests/>
@@ -39,10 +52,11 @@ One difference between the two modes, on purpose:
 
 ## The prompts
 
-`prompts.js` holds the two prompts that were sent, one per version:
+`prompts.js` holds the two prompts that were sent, one per variant:
 
-- `PROMPT_V1` is the brief given to every model in `v1/`.
-- `PROMPT_V2` is the brief given to every model in `v2/`.
+- `PROMPT_AURORA_TORUS` is the brief given to every model in `aurora-torus/`.
+- `PROMPT_AURORA_TORUS_WITH_CONTROL` is the brief given to every model in
+  `aurora-torus-with-control/`.
 
 Both are plain JSON-quoted string literals, so backticks, quotes, and newlines
 inside a prompt need no manual escaping. To edit one, change the text between
@@ -51,26 +65,34 @@ nothing else needs to change.
 
 ## Adding new results
 
-Drop the model's HTML file into `v1/` or `v2/`, then run the sync skill
-(`.agents/skills/sync-bench/`) or its script directly from the project root:
+Drop the model's HTML file into the folder for its variant, then run the sync
+skill (`.agents/skills/sync-bench/`) or its script directly from the project
+root:
 
 ```bash
 node tools/sync-collection.mjs
 ```
 
-It scans both folders, regenerates `manifest.js`, and captures a thumbnail for
-every result that lacks one. It prints what was added, resized, or removed.
-Useful flags: `--dry-run` to preview the diff, `--force` to re-capture every
-thumbnail, `--prune` to delete thumbnails whose result file is gone. The sync
-never edits or deletes the result HTML files themselves.
+It scans every variant folder, regenerates `manifest.js`, and captures a
+thumbnail for every result that lacks one. It prints what was added, resized,
+or removed. Useful flags: `--dry-run` to preview the diff, `--force` to
+re-capture every thumbnail, `--prune` to delete thumbnails whose result file is
+gone. The sync never edits or deletes the result HTML files themselves.
+
+To add a new variant, add an entry to `versions.js`, create the folder, then
+run the sync.
 
 ## Deep links
 
-The viewer reads `v` (1 or 2) and `model` (the filename without `.html`) from the
-query string, for example `view.html?v=1&model=tiel-coder-q3`. Version plus model
-is the unique key, since `agnes-3.0-flash` and `tiel-coder-q3` exist in both
-versions. Unknown or missing values show an error panel with links to the valid
+The viewer reads `v` (the variant slug) and `model` (the filename without `.html`)
+from the query string, for example
+`view.html?v=aurora-torus&model=tiel-coder-q3`. Variant plus model is the
+unique key, since `agnes-3.0-flash` and `tiel-coder-q3` were run for both
+variants. Unknown or missing values show an error panel with links to the valid
 models instead of a blank iframe.
+
+The old numbered values (`?v=1`, `?v=2`) still resolve, so links made before
+the rename keep working.
 
 ## File layout
 
@@ -78,18 +100,19 @@ models instead of a blank iframe.
 llm-3d-tests/
   index.html        prompt index + model grid
   view.html         full-viewport iframe viewer
-  prompts.js        PROMPT_V1 / PROMPT_V2 (the real prompt text)
+  prompts.js        the prompt text, one string per variant
+  versions.js       the scene variants (slug, label)
   manifest.js       generated model list + byte sizes (do not edit by hand)
   app.css           shell styles
-  app.js            page logic (reads window.MANIFEST and window.PROMPTS)
-  thumbs/           v1-<model>.png, v2-<model>.png
+  app.js            page logic (reads window.MANIFEST, window.VERSIONS, window.PROMPTS)
+  thumbs/           <variant>-<model>.png
   tools/
     capture.mjs          shared headless-Chrome capture helpers
     sync-collection.mjs  add missing results + thumbnails (the sync skill)
     capture-thumbs.mjs   re-capture every thumbnail
   .agents/skills/sync-bench/   the sync skill (SKILL.md)
-  v1/               17 raw model HTML files
-  v2/               5 raw model HTML files
+  aurora-torus/              17 raw model HTML files
+  aurora-torus-with-control/  5 raw model HTML files
 ```
 
 The model list and the byte sizes shown on the cards live in `manifest.js`,
@@ -101,7 +124,7 @@ edit it by hand; change the files and re-run the sync.
 Real screenshots, not live iframes. Each scene is loaded in headless Chrome
 (Playwright driving the system Chrome), waited for its canvas and loading
 overlay, given a few seconds to settle, and captured at 960x540 to
-`thumbs/<version>-<model>.png`. All 22 current results have a thumbnail. Cards
+`thumbs/<variant>-<model>.png`. All 22 current results have a thumbnail. Cards
 load these lazily; if a PNG is ever missing, the card falls back to a
 "No preview" tile.
 

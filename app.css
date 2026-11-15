@@ -22,11 +22,11 @@
   --prompt-ink: #c9d1de;
 
   /* Accents borrowed from the aurora subject, kept low-chroma */
-  --accent: #7cd6c0;          /* v1, active states, focus */
+  --accent: #7cd6c0;          /* aurora torus, active states, focus */
   --accent-strong: #a5e9d8;
   --accent-dim: rgba(124, 214, 192, 0.12);
-  --v2-hue: #b39ddb;          /* v2 marker */
-  --v2-dim: rgba(179, 157, 219, 0.13);
+  --v2-hue: #b39ddb;          /* aurora torus with control marker */
+  --v2-dim: rgba(179, 157, 219, 0.13);  /* aurora torus with control */
   --danger: #ef8a93;
   --danger-dim: rgba(239, 138, 147, 0.1);
   --focus: #8fd8c6;
@@ -157,64 +157,32 @@ a:hover { color: var(--accent-strong); }
 .brand:hover { color: var(--accent-strong); }
 .brand svg { color: var(--accent); flex: none; }
 
-/* Version switcher: native radios styled as a segmented control.
-   Arrow keys, label clicks and focus come from the platform. */
-.version-switch {
+/* Version picker: a native select, because the scene names are long and a
+   segmented control cannot hold them without wrapping. */
+.version-picker {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0;
   margin-inline-start: auto;
-  padding: 0;
-  border: 0;
   min-width: 0;
 }
-.version-switch-label {
+.version-picker-label {
   font-size: 12px;
   color: var(--text-3);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.version-options {
-  display: flex;
-  padding: 3px;
-  gap: 2px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-1);
-  border-radius: 10px;
-}
-.version-option { position: relative; display: flex; }
-.version-option input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  margin: 0;
-  cursor: pointer;
-}
-.version-option span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 56px;
+.select-compact {
   min-height: 38px;
-  padding: 4px 14px;
-  border-radius: 7px;
-  font: 600 13px/1 var(--font-mono);
-  color: var(--text-2);
-  cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease;
+  max-width: 260px;
+  padding-block: 6px;
+  font-size: 12.5px;
 }
-.version-option:hover span { color: var(--text-1); background: var(--bg-2); }
-.version-option input:checked + span {
-  background: var(--bg-3);
-  color: var(--accent-strong);
-  box-shadow: inset 0 0 0 1px var(--line-2);
+.select[data-index="1"] {
+  color: var(--v2-hue);
+  border-color: rgba(179, 157, 219, 0.32);
 }
-.version-option input[value="2"]:checked + span { color: var(--v2-hue); }
-.version-option input:focus-visible + span {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
+.select[data-index="1"]:hover { border-color: var(--v2-hue); }
 
 /* ------------------------------------------------------------- index page */
 
@@ -423,6 +391,7 @@ h2 {
   color: var(--text-3);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .card-alt {
   display: inline-flex;
@@ -433,11 +402,12 @@ h2 {
   margin-inline-end: -8px;
   border-radius: 6px;
   font: 600 11.5px/1 var(--font-mono);
+  white-space: nowrap;
   color: var(--v2-hue);
   background: var(--v2-dim);
   transition: background-color 150ms ease, color 150ms ease;
 }
-.card-alt[data-version="1"] { color: var(--accent); background: var(--accent-dim); }
+.card-alt[data-index="0"] { color: var(--accent); background: var(--accent-dim); }
 .card-alt:hover { color: var(--text-1); background: var(--bg-3); }
 
 .footer {
@@ -504,7 +474,7 @@ h2 {
   background: var(--accent-dim);
   border: 1px solid rgba(124, 214, 192, 0.3);
 }
-.version-chip[data-version="2"] {
+.version-chip[data-index="1"] {
   color: var(--v2-hue);
   background: var(--v2-dim);
   border-color: rgba(179, 157, 219, 0.32);
@@ -661,14 +631,18 @@ h2 {
   .viewer-controls {
     flex-basis: 100%;
     margin-inline-start: 0;
+    flex-wrap: wrap;
   }
+  /* The variant name gets its own row so the model select stays readable. */
+  .viewer-controls .select-compact { flex: 1 1 100%; max-width: none; }
   .select { flex: 1 1 auto; max-width: none; }
   .viewer-model { font-size: 13px; }
 }
 
 @media (max-width: 420px) {
   .brand span { display: none; }
-  .version-switch-label { display: none; }
+  .version-picker-label { display: none; }
+  .select-compact { max-width: none; flex: 1 1 auto; }
   .page { padding-block-start: 28px; }
 }
 

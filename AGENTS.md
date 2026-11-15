@@ -6,13 +6,22 @@ Repo-specific rules for the 3D scene bench. Cross-project habits live in
 ## What this repo is
 
 One prompt was sent to many LLM models. Each model returned a standalone
-HTML file with a Three.js scene. `v1/` holds the results for prompt v1, `v2/`
-for prompt v2. The preview site shows the prompt and every raw render.
+HTML file with a Three.js scene. A scene variant owns one prompt and one
+folder of results:
 
-- `v1/` and `v2/` are the source of truth. The sync script never edits or
+| slug | label | folder |
+|---|---|---|
+| `aurora-torus` | Aurora torus | `aurora-torus/` |
+| `aurora-torus-with-control` | Aurora torus with control | `aurora-torus-with-control/` |
+
+`versions.js` holds that list. The slug is the key used everywhere: the
+manifest key, the prompts file key, the thumbnail prefix, the `?v=` URL value,
+and the folder name on disk.
+
+- The result folders are the source of truth. The sync script never edits or
   deletes result HTML files.
-- The key for one result is version plus model slug, not the slug alone.
-  `agnes-3.0-flash` and `tiel-coder-q3` exist in both versions.
+- The key for one result is variant plus model slug, not the slug alone.
+  `agnes-3.0-flash` and `tiel-coder-q3` were run for both variants.
 
 ## Rules
 
@@ -24,11 +33,12 @@ for prompt v2. The preview site shows the prompt and every raw render.
   thumbnails whose result file is gone.
 - Result filenames are lowercase and carry no version suffix. A model name is
   the filename without `.html`, and it must match the card label.
-- `prompts.js` holds the two prompt texts as JSON-quoted string literals.
-  `app.js` reads them from `window.PROMPTS`. The sync script does not touch
-  this file.
+- `prompts.js` holds one prompt string per variant slug. `app.js` reads them
+  from `window.PROMPTS`. The sync script does not touch this file.
 - The rendered scenes are shown as-is. Do not restyle, reformat, or inject
-  styles into anything under `v1/` or `v2/`.
+  styles into anything under a variant folder.
+- To add a variant: add an entry to `versions.js`, create the folder with the
+  same slug, add the prompt string to `prompts.js`, then run the sync.
 
 ## Running it
 
@@ -64,6 +74,6 @@ Scenes fetch Three.js from a CDN, so capture needs a network connection.
 ## Verification
 
 Open the pages and look at them before reporting a change done. Check that the
-model count matches the number of files in the selected version, that a new
+model count matches the number of files in the selected variant, that a new
 card shows a real thumbnail, that clicking a card opens the right scene, and
-that the viewer's model select lists the new model.
+that the viewer's variant and model selects list the new model.
