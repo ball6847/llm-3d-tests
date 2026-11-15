@@ -48,6 +48,16 @@ const LOADER_HIDDEN = () => {
   });
 };
 
+/* Some scenes open on an intro card that only clears when the visitor
+   presses start. Click it so the capture shows the scene, not the card. */
+const DISMISS_INTRO = () => {
+  const btn = document.querySelector('#startBtn, #start, [data-start]');
+  if (btn) { btn.click(); return true; }
+  const intro = document.querySelector('#intro');
+  if (intro) { intro.classList.add('gone'); return true; }
+  return false;
+};
+
 /* Capture one scene to <outDir>/<v>-<slug>.png. Returns true on success.
    Failures are reported, never thrown, so a batch can skip and continue. */
 export async function captureScene(browser, job, outDir, opts = {}) {
@@ -61,6 +71,7 @@ export async function captureScene(browser, job, outDir, opts = {}) {
     await page.goto(pathToFileURL(job.file).href, { waitUntil: 'load', timeout: 30000 });
     await page.waitForSelector('canvas', { timeout: 20000 });
     await page.waitForFunction(LOADER_HIDDEN, null, { timeout: 25000 }).catch(() => {});
+    await page.evaluate(DISMISS_INTRO).catch(() => {});
     await page.waitForTimeout(settle);
     await page.screenshot({ path: out });
     return { ok: true, out };

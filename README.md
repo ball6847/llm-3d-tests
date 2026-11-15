@@ -19,6 +19,7 @@ each owns a folder under `collections/` named after its slug.
 |---|---|---|---|
 | `aurora-torus` | Aurora torus | `collections/aurora-torus/` | 17 |
 | `aurora-torus-with-control` | Aurora torus with control | `collections/aurora-torus-with-control/` | 5 |
+| `llamacpp-expert-cache-viz` | llama.cpp expert cache | `collections/llamacpp-expert-cache-viz/` | 1 |
 
 The slug is also the thumbnail prefix (`thumbs/<slug>-<model>.png`) and the
 `?v=` value in the URL.
@@ -58,6 +59,8 @@ One difference between the two modes, on purpose:
   `collections/aurora-torus/`.
 - `PROMPT_AURORA_TORUS_WITH_CONTROL` is the brief given to every model in
   `collections/aurora-torus-with-control/`.
+- `PROMPT_LLAMACPP_EXPERT_CACHE_VIZ` is the brief given to every model in
+  `collections/llamacpp-expert-cache-viz/`.
 
 Both are plain JSON-quoted string literals, so backticks, quotes, and newlines
 inside a prompt need no manual escaping. To edit one, change the text between
@@ -117,8 +120,9 @@ llm-3d-tests/
     capture-thumbs.mjs   re-capture every thumbnail
   .agents/skills/sync-bench/   the sync skill (SKILL.md)
   collections/
-    aurora-torus/              17 raw model HTML files
-    aurora-torus-with-control/  5 raw model HTML files
+    aurora-torus/               17 raw model HTML files
+    aurora-torus-with-control/   5 raw model HTML files
+    llamacpp-expert-cache-viz/   1 raw model HTML file
 ```
 
 The model list and the byte sizes shown on the cards live in `manifest.js`,

@@ -13,6 +13,7 @@ of results:
 |---|---|---|
 | `aurora-torus` | Aurora torus | `collections/aurora-torus/` |
 | `aurora-torus-with-control` | Aurora torus with control | `collections/aurora-torus-with-control/` |
+| `llamacpp-expert-cache-viz` | llama.cpp expert cache | `collections/llamacpp-expert-cache-viz/` |
 
 `collections.js` holds that list. The slug is the key used everywhere: the
 manifest key, the prompts file key, the thumbnail prefix, the `?v=` URL value,

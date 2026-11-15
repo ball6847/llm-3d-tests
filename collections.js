@@ -22,6 +22,11 @@ var BENCH_COLLECTIONS = [
     label: 'Aurora torus with control',
     short: 'Aurora + control',
     legacy: '2'
+  },
+  {
+    slug: 'llamacpp-expert-cache-viz',
+    label: 'llama.cpp expert cache',
+    short: 'Expert cache'
   }
 ];
 

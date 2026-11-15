@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>llama.cpp 1.0.0 · MoE Expert Cache — อธิบายเป็นภาพด้วย Three.js</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2306090f'/%3E%3Crect x='5' y='5' width='10' height='10' rx='2' fill='%232dd4ee'/%3E%3Crect x='17' y='5' width='10' height='10' rx='2' fill='%23b44fff'/%3E%3Crect x='5' y='17' width='10' height='10' rx='2' fill='%23ff4f9a'/%3E%3Crect x='17' y='17' width='10' height='10' rx='2' fill='%23f5a524'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#06090f; --bg2:#0a101c; --surface:#0d1524; --surface2:#111c30; --line:#1d2c47;
+  --text:#ece7dd; --muted:#8b94a8; --dim:#5b6579;
+  --cyan:#2dd4ee; --cyan-d:#0e7f95; --amber:#f5a524; --amber-d:#9a6410;
+  --green:#3ce88a; --magenta:#ff4f9a; --red:#ff5c5c; --blue:#5aa2ff; --violet:#b44fff;
+  --grad:linear-gradient(90deg,var(--cyan),var(--violet) 55%,var(--magenta));
+  --thai:'IBM Plex Sans Thai','Noto Sans Thai',Tahoma,sans-serif;
+  --mono:'Space Grotesk','IBM Plex Sans Thai',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  background:var(--ink); color:var(--text); font-family:var(--thai); font-size:14px;
+  overflow:hidden;
+}
+/* ---------- scrollbars in our own language ---------- */
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--cyan-d),#6a3d9e);border-radius:8px;border:2px solid var(--bg2)}
+::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--cyan),var(--magenta))}
+*{scrollbar-width:thin;scrollbar-color:#0e7f95 var(--bg2)}
+
+#app{display:grid;grid-template-rows:56px 1fr 60px;height:100vh;min-width:0}
+/* ---------- header ---------- */
+header{
+  display:flex;align-items:center;gap:14px;padding:0 18px;min-width:0;
+  background:linear-gradient(90deg,#0b1322,#0d1524 40%,#131028);
+  border-bottom:1px solid var(--line);position:relative;z-index:20;
+  animation:dropIn .7s cubic-bezier(.2,.9,.3,1) both;
+}
+@keyframes dropIn{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}
+.logo{display:flex;align-items:center;gap:10px;min-width:0}
+.logo .mark{
+  width:34px;height:34px;border-radius:9px;flex:none;position:relative;
+  background:conic-gradient(from 210deg,var(--cyan),var(--violet),var(--magenta),var(--amber),var(--cyan));
+  box-shadow:0 0 18px rgba(45,212,238,.35);
+}
+.logo .mark::after{content:"";position:absolute;inset:5px;border-radius:6px;background:var(--ink)}
+.logo .mark::before{content:"⚡";position:absolute;inset:0;display:grid;place-items:center;font-size:15px;z-index:1}
+.logo h1{font-size:15px;font-weight:600;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.logo h1 span{font-family:var(--mono);color:var(--cyan)}
+.badge{
+  font-family:var(--mono);font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;flex:none;
+  color:#04121a;background:var(--grad);box-shadow:0 0 14px rgba(180,79,255,.4);
+}
+header .spacer{flex:1}
+.hbtn{
+  display:flex;align-items:center;gap:7px;background:var(--surface2);color:var(--text);
+  border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-family:var(--thai);
+  font-size:12.5px;cursor:pointer;transition:.2s;white-space:nowrap;
+}
+.hbtn:hover{border-color:var(--cyan);box-shadow:0 0 12px rgba(45,212,238,.25);transform:translateY(-1px)}
+.hbtn.off{color:var(--dim)}
+.hbtn .ic{font-size:14px}
+/* ---------- main grid ---------- */
+main{display:grid;grid-template-columns:330px minmax(0,1fr) 300px;min-height:0;min-width:0}
+.panel{background:var(--surface);overflow-y:auto;overflow-x:hidden;min-height:0;min-width:0;position:relative}
+#narrative{border-right:1px solid var(--line);padding:20px 20px 26px;animation:slideL .8s .15s cubic-bezier(.2,.9,.3,1) both}
+#lab{border-left:1px solid var(--line);padding:16px 16px 24px;animation:slideR .8s .25s cubic-bezier(.2,.9,.3,1) both}
+@keyframes slideL{from{transform:translateX(-40px);opacity:0}to{transform:none;opacity:1}}
+@keyframes slideR{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+
+/* narrative */
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:2.5px;color:var(--cyan);text-transform:uppercase;margin-bottom:8px}
+#chTitle{font-size:21px;font-weight:700;line-height:1.35;margin-bottom:12px;min-height:56px}
+#chTitle .no{
+  display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;margin-right:8px;
+  background:var(--grad);color:#04121a;font-family:var(--mono);font-size:15px;vertical-align:-6px;
+}
+.chbody{color:#c9cdd8;line-height:1.85;font-size:13.5px}
+@keyframes chReveal{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.chreveal{animation:chReveal .6s cubic-bezier(.2,.9,.3,1) both}
+.chbody p{margin-bottom:10px}
+.chbody b{color:var(--text)}
+.chbody .c-cyan{color:var(--cyan)} .chbody .c-amber{color:var(--amber)}
+.chbody .c-green{color:var(--green)} .chbody .c-mag{color:var(--magenta)}
+code.chip{
+  font-family:var(--mono);font-size:12px;background:#0a1120;border:1px solid var(--line);
+  padding:1.5px 7px;border-radius:6px;color:var(--cyan);white-space:nowrap;
+}
+.callout{
+  margin:14px 0;padding:12px 14px;border-radius:10px;font-size:13px;line-height:1.7;
+  background:linear-gradient(120deg,rgba(45,212,238,.09),rgba(180,79,255,.09));
+  border:1px solid rgba(45,212,238,.3);border-left:3px solid var(--cyan);
+}
+.callout .t{font-weight:700;color:var(--cyan);font-size:12px;letter-spacing:.5px;margin-bottom:4px}
+.formula{
+  font-family:var(--mono);font-size:13px;background:#0a1120;border:1px dashed #2a3c5e;
+  border-radius:9px;padding:10px 12px;margin:10px 0;color:#d9e2f2;line-height:1.7;overflow-x:auto;
+}
+.formula em{color:var(--amber);font-style:normal}
+/* step nav */
+.stepnav{display:flex;align-items:center;gap:10px;margin-top:18px}
+.navbtn{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:10px;
+  background:var(--surface2);border:1px solid var(--line);border-radius:10px;color:var(--text);
+  font-family:var(--thai);font-size:13px;font-weight:600;cursor:pointer;transition:.2s;
+}
+.navbtn:hover:not(:disabled){border-color:var(--cyan);box-shadow:0 0 14px rgba(45,212,238,.2)}
+.navbtn:disabled{opacity:.35;cursor:default}
+.navbtn.primary{background:var(--grad);color:#04121a;border:none}
+.navbtn.primary:hover:not(:disabled){box-shadow:0 0 18px rgba(255,79,154,.45)}
+.dots{display:flex;gap:7px;justify-content:center;margin-top:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:#22304c;cursor:pointer;transition:.25s;border:none;padding:0}
+.dot.on{background:var(--grad);transform:scale(1.35);box-shadow:0 0 10px rgba(180,79,255,.6)}
+.dot:hover{background:var(--cyan)}
+details.refs{margin-top:20px;border-top:1px solid var(--line);padding-top:12px}
+details.refs summary{cursor:pointer;color:var(--muted);font-size:12.5px;font-weight:600;list-style:none}
+details.refs summary::before{content:"▸ ";color:var(--cyan)}
+details.refs[open] summary::before{content:"▾ "}
+details.refs ul{list-style:none;margin-top:10px}
+details.refs li{margin-bottom:7px;font-size:12px;line-height:1.5}
+details.refs a{color:var(--blue);text-decoration:none}
+details.refs a:hover{text-decoration:underline}
+/* benchmark table */
+.bench{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0;font-family:var(--mono)}
+.bench th{color:var(--muted);font-weight:500;text-align:left;padding:5px 7px;border-bottom:1px solid var(--line);font-family:var(--thai)}
+.bench td{padding:5px 7px;border-bottom:1px solid #14203a;color:#c9cdd8}
+.bench tr.hl td{color:var(--green);font-weight:600}
+.bench .num{text-align:right}
+/* ---------- stage ---------- */
+#stage{position:relative;min-width:0;min-height:0;background:var(--ink);overflow:hidden}#stage canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#stage canvas:active{cursor:grabbing}
+.overlay{position:absolute;pointer-events:none;z-index:5}
+/* HUD */
+#hud{top:14px;right:14px;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.stat{
+  pointer-events:auto;background:rgba(9,14,26,.82);backdrop-filter:blur(8px);
+  border:1px solid var(--line);border-radius:11px;padding:8px 13px;min-width:158px;
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+}
+.stat .k{font-size:11px;color:var(--muted)}
+.stat .v{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--cyan)}
+.stat.green .v{color:var(--green)} .stat.mag .v{color:var(--magenta)} .stat.amber .v{color:var(--amber)}
+.stat .u{font-size:10px;color:var(--dim);margin-left:3px;font-weight:400}
+/* time bar */
+#timebar{
+  bottom:16px;left:50%;transform:translateX(-50%);width:min(560px,72%);
+  background:rgba(9,14,26,.85);backdrop-filter:blur(8px);border:1px solid var(--line);
+  border-radius:12px;padding:11px 15px;pointer-events:auto;transition:opacity .5s,transform .5s;
+}
+#timebar.hide{opacity:0;transform:translateX(-50%) translateY(20px);pointer-events:none}
+#timebar .tt{font-size:11px;color:var(--muted);margin-bottom:7px;display:flex;justify-content:space-between}
+#timebar .tt b{color:var(--text);font-weight:600}
+.trow{display:grid;grid-template-columns:38px 1fr 64px;align-items:center;gap:8px;margin-bottom:5px}
+.trow .lbl{font-family:var(--mono);font-size:11px;font-weight:600}
+.trow.gpu .lbl{color:var(--cyan)} .trow.cpu .lbl{color:var(--amber)}
+.track{height:9px;background:#0a1120;border-radius:6px;overflow:hidden;border:1px solid #16233c}
+.fill{height:100%;border-radius:6px;transition:width .45s cubic-bezier(.2,.9,.3,1)}
+.trow.gpu .fill{background:linear-gradient(90deg,var(--cyan-d),var(--cyan))}
+.trow.cpu .fill{background:linear-gradient(90deg,var(--amber-d),var(--amber))}
+.trow .ms{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:right}
+/* legend */
+#legend{bottom:16px;left:14px;display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}
+#legend .li{display:flex;align-items:center;gap:7px;background:rgba(9,14,26,.7);padding:3px 9px;border-radius:7px;border:1px solid #14203a}
+#legend .sw{width:10px;height:10px;border-radius:3px;flex:none}
+/* world labels */
+.wlabel{
+  position:absolute;transform:translate(-50%,-50%);pointer-events:none;z-index:4;
+  font-size:11px;font-weight:600;color:#dfe6f2;background:rgba(7,11,20,.78);
+  border:1px solid #23345a;border-radius:7px;padding:2.5px 8px;white-space:nowrap;
+  font-family:var(--thai);letter-spacing:.2px;transition:opacity .3s;
+}
+.wlabel.gpu{border-color:rgba(45,212,238,.5);color:var(--cyan)}
+.wlabel.ram{border-color:rgba(245,165,36,.5);color:var(--amber)}
+.wlabel.small{font-size:9.5px;padding:1px 5px;font-family:var(--mono);font-weight:500}
+.wlabel.crf{color:#ffd9a8;border-color:rgba(245,165,36,.4)}
+/* intro card */
+#intro{
+  position:absolute;inset:0;z-index:10;display:grid;place-items:center;
+  background:radial-gradient(ellipse at 50% 40%,rgba(10,16,30,.55),rgba(6,9,15,.92) 75%);
+  transition:opacity .8s;pointer-events:auto;
+}
+#intro.gone{opacity:0;pointer-events:none}
+.introcard{text-align:center;max-width:560px;padding:30px;animation:popIn 1s .3s cubic-bezier(.2,.9,.3,1) both}
+@keyframes popIn{from{transform:translateY(26px) scale(.96);opacity:0}to{transform:none;opacity:1}}
+.introcard .k{font-family:var(--mono);letter-spacing:4px;font-size:12px;color:var(--cyan);margin-bottom:14px}
+.introcard h2{font-size:34px;font-weight:700;line-height:1.3;margin-bottom:12px}
+.introcard h2 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.introcard p{color:var(--muted);line-height:1.8;font-size:14px;margin-bottom:22px}
+.bigbtn{
+  font-family:var(--thai);font-size:15px;font-weight:700;padding:13px 34px;border-radius:12px;border:none;
+  background:var(--grad);color:#04121a;cursor:pointer;box-shadow:0 0 26px rgba(180,79,255,.45);transition:.2s;
+}
+.bigbtn:hover{transform:translateY(-2px);box-shadow:0 0 36px rgba(255,79,154,.6)}
+.introcard .hint{margin-top:16px;font-size:11.5px;color:var(--dim)}
+/* toast */
+#toast{
+  position:absolute;top:16px;left:50%;transform:translateX(-50%) translateY(-8px);z-index:12;
+  background:rgba(13,21,36,.95);border:1px solid var(--cyan);color:var(--text);
+  padding:9px 18px;border-radius:10px;font-size:12.5px;opacity:0;transition:.35s;pointer-events:none;
+  box-shadow:0 0 18px rgba(45,212,238,.25);
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* CDN load warning */
+#cdnwarn{position:fixed;inset:0;z-index:99;display:none;place-items:center;background:var(--ink);color:var(--text);text-align:center;padding:30px;line-height:2}
+#cdnwarn code{font-family:var(--mono);background:var(--surface2);padding:3px 10px;border-radius:7px;color:var(--cyan)}
+/* ---------- lab ---------- */
+.labgroup{margin-bottom:18px}
+.labgroup>.gt{
+  font-size:11px;font-weight:700;letter-spacing:2px;color:var(--muted);text-transform:uppercase;
+  margin-bottom:10px;display:flex;align-items:center;gap:8px;
+}
+.labgroup>.gt::after{content:"";flex:1;height:1px;background:var(--line)}
+.ctl{margin-bottom:12px}
+.ctl .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+.ctl label{font-size:12.5px;color:#c3c9d6;font-weight:500}
+.ctl .val{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--cyan)}
+.ctl .note{font-size:10.5px;color:var(--dim);margin-top:3px;line-height:1.5}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:4px;outline:none;
+  background:linear-gradient(90deg,var(--cyan-d),#6a3d9e);cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--text);
+  border:3px solid var(--cyan);box-shadow:0 0 10px rgba(45,212,238,.6);cursor:grab;transition:.15s;
+}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.15)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--text);border:3px solid var(--cyan);cursor:grab}
+select{
+  width:100%;background:var(--surface2);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:7px 9px;font-family:var(--thai);font-size:12.5px;cursor:pointer;outline:none;
+}
+select:hover{border-color:var(--cyan)}
+.toggle{display:flex;align-items:center;justify-content:space-between;padding:7px 0;cursor:pointer;user-select:none}
+.toggle span{font-size:12.5px;color:#c3c9d6}
+.tswitch{width:36px;height:20px;border-radius:12px;background:#1a2740;border:1px solid var(--line);position:relative;transition:.25s;flex:none}
+.tswitch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--dim);transition:.25s}
+.toggle.on .tswitch{background:linear-gradient(90deg,var(--cyan-d),#6a3d9e);border-color:var(--cyan)}
+.toggle.on .tswitch::after{left:18px;background:#fff;box-shadow:0 0 8px rgba(45,212,238,.8)}
+.btnrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.lbtn{
+  padding:9px 6px;border-radius:9px;border:1px solid var(--line);background:var(--surface2);
+  color:var(--text);font-family:var(--thai);font-size:12px;font-weight:600;cursor:pointer;transition:.2s;
+}
+.lbtn:hover{border-color:var(--cyan);box-shadow:0 0 12px rgba(45,212,238,.2)}
+.lbtn.wide{grid-column:1/-1}
+.lbtn.accent{background:var(--grad);color:#04121a;border:none}
+/* ---------- footer ---------- */
+footer{
+  display:flex;align-items:center;gap:16px;padding:0 18px;background:var(--surface);min-width:0;
+  border-top:1px solid var(--line);position:relative;z-index:20;
+}
+#playBtn{
+  width:42px;height:42px;border-radius:50%;border:none;cursor:pointer;flex:none;
+  background:var(--grad);color:#04121a;font-size:17px;display:grid;place-items:center;
+  box-shadow:0 0 16px rgba(180,79,255,.45);transition:.2s;
+}
+#playBtn:hover{transform:scale(1.08)}
+.footgrp{display:flex;align-items:center;gap:9px}
+.footgrp .fl{font-size:11.5px;color:var(--muted);white-space:nowrap}
+#speed{width:110px}
+#speedVal{font-family:var(--mono);font-size:12px;color:var(--cyan);min-width:38px}
+#stepLabel{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
+footer .spacer{flex:1}
+.kbd{font-size:11px;color:var(--dim);white-space:nowrap}
+.kbd b{font-family:var(--mono);background:var(--surface2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted);font-weight:500}
+#tourProg{position:absolute;left:0;top:-2px;height:2px;background:var(--grad);width:0%;transition:width .3s linear}
+.tourbtn{
+  display:flex;align-items:center;gap:7px;background:var(--surface2);border:1px solid var(--line);
+  color:var(--muted);border-radius:9px;padding:8px 12px;font-family:var(--thai);font-size:12px;cursor:pointer;transition:.2s;white-space:nowrap;
+}
+.tourbtn.on{border-color:var(--amber);color:var(--amber);box-shadow:0 0 12px rgba(245,165,36,.25)}
+/* ---------- responsive ---------- */
+@media (max-width:1180px){
+  main{grid-template-columns:290px minmax(0,1fr) 264px}
+  .logo h1{font-size:13px}
+}
+@media (max-width:980px){
+  body{overflow-y:auto;overflow-x:hidden}
+  #app{grid-template-rows:56px auto auto;height:auto;min-height:100vh;width:100%;max-width:100vw}
+  main{grid-template-columns:minmax(0,1fr);grid-template-rows:58vh auto auto}
+  #stage{order:-1;height:58vh}
+  #narrative{border-right:none;border-top:1px solid var(--line)}
+  #lab{border-left:none;border-top:1px solid var(--line)}
+  footer{position:sticky;bottom:0;flex-wrap:wrap;padding:8px 12px;gap:10px;height:auto}
+  .kbd{display:none}
+  #hud .stat{min-width:128px;padding:6px 10px}
+  #legend{display:none}
+  .introcard h2{font-size:25px}
+}
+@media (max-width:560px){
+  header{gap:9px;padding:0 12px}
+  header .hbtn span:not(.ic){display:none}
+  header .hbtn{padding:7px 9px}
+  .badge{display:none}
+  .logo h1{font-size:12.5px}
+  #timebar{width:88%}
+  .footgrp .fl{display:none}
+  #speed{width:84px}
+}
+</style>
+</head>
+<body>
+<div id="cdnwarn"><div>
+  <h2 style="margin-bottom:12px">โหลด Three.js จาก CDN ไม่สำเร็จ</h2>
+  ไฟล์เดียวนี้ต้องต่ออินเทอร์เน็ตเพื่อโหลดไลบรารีจาก CDN<br>
+  ถ้าออฟไลน์ ใช้เวอร์ชัน offline แทน: รัน <code>./start.sh</code> ในโฟลเดอร์โปรเจกต์<br><br>
+  <button class="bigbtn" onclick="location.reload()">ลองใหม่</button>
+</div></div>
+
+<div id="app">
+  <header>
+    <div class="logo">
+      <div class="mark"></div>
+      <h1>MoE <span>Expert Cache</span> · llama.cpp</h1>
+    </div>
+    <span class="badge">v1.0.0</span>
+    <div class="spacer"></div>
+    <button class="hbtn" id="soundBtn" title="เปิด/ปิดเสียงประกอบ"><span class="ic" id="soundIc">🔊</span><span id="soundTxt">เสียงเปิด</span></button>
+    <button class="hbtn" id="viewResetBtn" title="กลับมุมกล้องเริ่มต้น"><span class="ic">🎥</span>รีเซ็ตมุมกล้อง</button>
+  </header>
+
+  <main>
+    <!-- ======== narrative ======== -->
+    <section class="panel" id="narrative">
+      <div class="eyebrow" id="chEyebrow">บทที่ 1 / 7</div>
+      <h2 id="chTitle"></h2>
+      <div class="chbody" id="chBody"></div>
+      <div class="stepnav">
+        <button class="navbtn" id="prevBtn">← ก่อนหน้า</button>
+        <button class="navbtn primary" id="nextBtn">ถัดไป →</button>
+      </div>
+      <div class="dots" id="dots"></div>
+      <details class="refs">
+        <summary>แหล่งอ้างอิง (ของจริงทั้งหมด)</summary>
+        <ul>
+          <li><a href="https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0" target="_blank" rel="noopener">Release notes v1.0.0 (13 พ.ย. 2026)</a></li>
+          <li><a href="https://github.com/ggml-org/llama.cpp/blob/master/docs/moe-cache.md" target="_blank" rel="noopener">docs/moe-cache.md — คู่มือทางการ</a></li>
+          <li><a href="https://github.com/ggml-org/llama.cpp/blob/master/src/llama-moe-cache.cpp" target="_blank" rel="noopener">src/llama-moe-cache.cpp — โค้ดจริง</a></li>
+          <li><a href="https://github.com/ggml-org/llama.cpp/pull/30966" target="_blank" rel="noopener">PR #30966 — CPU share + สคริปต์จูน</a></li>
+          <li><a href="https://github.com/ggml-org/llama.cpp/pull/31233" target="_blank" rel="noopener">PR #31233 — ClassLRU / CRF</a></li>
+          <li><a href="https://github.com/ggml-org/llama.cpp/pull/31853" target="_blank" rel="noopener">PR #31853 — เลือก miss เข้า CPU ด้วย CRF</a></li>
+          <li><a href="https://github.com/ggml-org/llama.cpp/pull/31888" target="_blank" rel="noopener">PR #31888 — CPU ไม่รอ GPU</a></li>
+          <li><a href="https://huggingface.co/blog/ggml-org/llama-cpp-v1" target="_blank" rel="noopener">บล็อกทางการ llama.cpp v1</a></li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- ======== 3D stage ======== -->
+    <section id="stage">
+      <div class="overlay" id="hud">
+        <div class="stat"><span class="k">ความเร็ว (จำลอง)</span><span class="v" id="stTps">–<span class="u">t/s</span></span></div>
+        <div class="stat green"><span class="k">Hit rate</span><span class="v" id="stHit">–<span class="u">%</span></span></div>
+        <div class="stat mag"><span class="k">อัปโหลด / token</span><span class="v" id="stUp">–</span></div>
+        <div class="stat amber"><span class="k">เร็วกว่าไม่มีแคช</span><span class="v" id="stSpd">–<span class="u">×</span></span></div>
+      </div>
+      <div class="overlay hide" id="timebar">
+        <div class="tt"><span>เวลาต่อ token · <b>จำลอง 48 เลเยอร์</b> (ของจริงคิดทุกเลเยอร์ MoE)</span><span id="tbTotal"></span></div>
+        <div class="trow gpu"><span class="lbl">GPU</span><div class="track"><div class="fill" id="tbGpu" style="width:0%"></div></div><span class="ms" id="tbGpuMs"></span></div>
+        <div class="trow cpu"><span class="lbl">CPU</span><div class="track"><div class="fill" id="tbCpu" style="width:0%"></div></div><span class="ms" id="tbCpuMs"></span></div>
+      </div>
+      <div class="overlay" id="legend">
+        <div class="li"><span class="sw" style="background:var(--green)"></span>hit · วิ่งบน GPU ทันที</div>
+        <div class="li"><span class="sw" style="background:var(--magenta)"></span>miss · อัปโหลดข้าม PCIe</div>
+        <div class="li"><span class="sw" style="background:var(--amber)"></span>CPU คำนวณจาก RAM</div>
+        <div class="li"><span class="sw" style="background:var(--red)"></span>ถูกไล่ (evict)</div>
+        <div class="li"><span class="sw" style="background:var(--violet);border-radius:50%"></span>วงแหวน = คลาส CRF</div>
+      </div>
+      <div id="labels"></div>
+      <div id="toast"></div>
+      <div id="intro">
+        <div class="introcard">
+          <div class="k">LLAMA.CPP v1.0.0 · FEATURE DEEP-DIVE</div>
+          <h2>เมื่อ <span>ผู้เชี่ยวชาญ</span> อยู่ใน RAM<br>แต่ GPU อยากใช้บ่อย ๆ</h2>
+          <p>MoE Expert Cache คือเทคนิคใหม่ที่ทำให้โมเดล MoE ใหญ่กว่า VRAM วิ่งเร็วขึ้นหลายเท่า<br>ดูเป็นภาพทีละขั้น แล้วลองปรับพารามิเตอร์เองในห้องแล็บด้านขวา</p>
+          <button class="bigbtn" id="startBtn">▶ เริ่มบทที่ 1</button>
+          <div class="hint">ลากเมาส์เพื่อหมุน · สกอร์ลเพื่อซูม · ←/→ เปลี่ยนบท · Space เล่น/หยุด</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== lab ======== -->
+    <aside class="panel" id="lab">
+      <div class="labgroup">
+        <div class="gt">การจำลอง</div>
+        <div class="ctl">
+          <div class="row"><label>ขนาด cache (slots)</label><span class="val" id="vSlots">16</span></div>
+          <input type="range" id="cSlots" min="4" max="32" step="4" value="16">
+          <div class="note">เทียบเท่า --moe-cache-mib · เปลี่ยนแล้วเริ่มจำลองใหม่</div>
+        </div>
+        <div class="ctl">
+          <div class="row"><label>จำนวน expert ทั้งหมด</label><span class="val" id="vExperts">64</span></div>
+          <select id="cExperts"><option value="32">32 ตัว</option><option value="64" selected>64 ตัว</option><option value="128">128 ตัว</option></select>
+        </div>
+        <div class="ctl">
+          <div class="row"><label>top-k ที่ router เลือก / token</label><span class="val" id="vTopk">6</span></div>
+          <input type="range" id="cTopk" min="2" max="8" step="1" value="6">
+        </div>
+        <div class="ctl">
+          <div class="row"><label>cpu-share (miss ที่ให้ CPU ทำ)</label><span class="val" id="vShare">0</span></div>
+          <input type="range" id="cShare" min="0" max="0.95" step="0.05" value="0">
+          <div class="note">ทำงานเมื่อ cache เต็มแล้ว · เลือก miss ที่ CRF ต่ำสุดไป CPU</div>
+        </div>
+        <div class="ctl">
+          <div class="row"><label>ความลำเอียงของ routing</label><span class="val" id="vSkew">0.65</span></div>
+          <input type="range" id="cSkew" min="0" max="1" step="0.05" value="0.65">
+          <div class="note">0 = สุ่มสม่ำเสมอ · 1 = กระจุกที่ expert ไม่กี่ตัว (เหมือนงานจริง)</div>
+        </div>
+        <div class="ctl">
+          <div class="row"><label>CRF half-life</label></div>
+          <select id="cHalf"><option value="128" selected>128 tokens (ค่าจริง)</option><option value="16">16 tokens (เร่งเพื่อสาธิต)</option></select>
+        </div>
+      </div>
+      <div class="labgroup">
+        <div class="gt">การแสดงผล</div>
+        <div class="ctl">
+          <div class="row"><label>ความแรงแสง (glow)</label><span class="val" id="vGlow">1.0</span></div>
+          <input type="range" id="cGlow" min="0.2" max="2" step="0.1" value="1">
+        </div>
+        <div class="toggle on" id="tLabels"><span>ป้ายกำกับในฉาก</span><div class="tswitch"></div></div>
+        <div class="toggle on" id="tRings"><span>วงแหวนคลาส CRF</span><div class="tswitch"></div></div>
+        <div class="toggle" id="tRotate"><span>หมุนกล้องอัตโนมัติ</span><div class="tswitch"></div></div>
+      </div>
+      <div class="labgroup">
+        <div class="gt">กล้อง</div>
+        <div class="ctl">
+          <select id="cCam">
+            <option value="overview">มุมรวม · เห็นทั้งเครื่อง</option>
+            <option value="router">มุม router</option>
+            <option value="cache">มุม cache บน GPU</option>
+            <option value="ram">มุม RAM / CPU</option>
+            <option value="bridge">มุมเลน PCIe</option>
+          </select>
+        </div>
+      </div>
+      <div class="labgroup">
+        <div class="gt">แอ็กชัน</div>
+        <div class="btnrow">
+          <button class="lbtn" id="bReset">↺ รีเซ็ตซิม</button>
+          <button class="lbtn" id="bSeed">🎲 สุ่ม routing</button>
+          <button class="lbtn accent wide" id="bExport">📸 บันทึกภาพ PNG</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <div id="tourProg"></div>
+    <button id="playBtn" title="เล่น/หยุด (Space)">▶</button>
+    <div class="footgrp">
+      <span class="fl">ความเร็ว</span>
+      <input type="range" id="speed" min="0.25" max="3" step="0.05" value="1.25">
+      <span id="speedVal">1.25×</span>
+    </div>
+    <button class="tourbtn" id="tourBtn" title="เปลี่ยนบทอัตโนมัติทุก 24 วินาที">⏩ ทัวร์อัตโนมัติ</button>
+    <span id="stepLabel">บทที่ 1/7</span>
+    <div class="spacer"></div>
+    <span class="kbd"><b>←</b><b>→</b> เปลี่ยนบท · <b>Space</b> เล่น/หยุด · ลาก = หมุนกล้อง</span>
+  </footer>
+</div>
+
+<script>
+window.__booted=false;
+setTimeout(function(){ if(!window.__booted){ var w=document.getElementById('cdnwarn'); if(w) w.style.display='grid'; } }, 9000);
+</script>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+window.__booted=true;
+
+/* ============================================================
+   palette & constants
+============================================================ */
+const C = {
+  ink:0x06090f, cyan:0x2dd4ee, cyanD:0x0e7f95, amber:0xf5a524, amberD:0x9a6410,
+  green:0x3ce88a, magenta:0xff4f9a, red:0xff5c5c, blue:0x5aa2ff, violet:0xb44fff,
+  surface:0x0d1524, line:0x1d2c47, text:0xece7dd
+};
+const CLASS_COLORS = [0x3b6fd4,0x4f8fe0,0x5aa2ff,0x7d7bf0,0xb44fff,0xe055c8,0xff4f9a,0xffb02e];
+// timing model, calibrated to the machine measured in PR #30966
+const T = { expertMiB:6.5, layers:48, upGiBs:9.6, cpuGiBs:48.7, baseMs:6.8, gpuComputeMs:0.06 };
+const msFor = (mib, bw) => mib * T.layers / (bw * 1024) * 1000;
+
+/* ============================================================
+   tiny helpers
+============================================================ */
+const $ = id => document.getElementById(id);
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const lerp = (a,b,t) => a + (b-a)*t;
+const easeIO = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+const easeOut = t => 1-Math.pow(1-t,3);
+function mulberry(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+let toastTimer;
+function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'),2600); }
+
+/* ============================================================
+   audio — soft synth blips tied to visible events
+============================================================ */
+const SFX = {
+  ctx:null, master:null, muted:false,
+  ensure(){ if(!this.ctx){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); this.master=this.ctx.createGain(); this.master.gain.value=this.muted?0:0.055; this.master.connect(this.ctx.destination);}catch(e){} } if(this.ctx&&this.ctx.state==='suspended') this.ctx.resume().catch(()=>{}); },
+  tone(f0,f1,dur,type='sine',g=1){ if(!this.ctx||this.muted||this.ctx.state!=='running') return; const t=this.ctx.currentTime; const o=this.ctx.createOscillator(), gn=this.ctx.createGain(); o.type=type; o.frequency.setValueAtTime(f0,t); o.frequency.exponentialRampToValueAtTime(Math.max(30,f1),t+dur); gn.gain.setValueAtTime(0.0001,t); gn.gain.exponentialRampToValueAtTime(g,t+0.012); gn.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.connect(gn); gn.connect(this.master); o.start(t); o.stop(t+dur+0.02); },
+  hit(){ this.tone(660,880,0.12,'sine',0.8); },
+  miss(){ this.tone(240,150,0.18,'triangle',0.9); },
+  evict(){ this.tone(320,90,0.3,'sawtooth',0.45); },
+  cpu(){ this.tone(440,520,0.1,'square',0.25); },
+  out(){ this.tone(980,1240,0.09,'sine',0.5); },
+  chapter(){ this.tone(392,392,0.25,'sine',0.5); setTimeout(()=>this.tone(523,523,0.3,'sine',0.5),110); },
+  setMuted(m){ this.muted=m; if(this.master) this.master.gain.value=m?0:0.055; }
+};
+window.addEventListener('pointerdown', ()=>SFX.ensure());
+window.addEventListener('keydown', ()=>SFX.ensure());
+
+/* ============================================================
+   three.js core
+============================================================ */
+const stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setClearColor(C.ink);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+stage.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(C.ink, 0.0135);
+const camera = new THREE.PerspectiveCamera(46, 1, 0.1, 300);
+camera.position.set(1, 25, 31);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.06;
+controls.target.set(0, 0.5, 0);
+controls.minDistance = 8; controls.maxDistance = 70;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.autoRotateSpeed = 0.7;
+
+scene.add(new THREE.AmbientLight(0x334466, 1.1));
+const keyGpu = new THREE.PointLight(C.cyan, 130, 60, 1.8); keyGpu.position.set(-12, 14, 4); scene.add(keyGpu);
+const keyRam = new THREE.PointLight(C.amber, 115, 60, 1.8); keyRam.position.set(13, 13, 3); scene.add(keyRam);
+const rim = new THREE.DirectionalLight(C.magenta, 0.5); rim.position.set(6, 10, -18); scene.add(rim);
+const fill = new THREE.DirectionalLight(0x8fb7ff, 0.4); fill.position.set(-8, 16, 14); scene.add(fill);
+
+/* ---------- cinematic bloom pipeline ---------- */
+let composer=null, bloomPass=null;
+try{
+  composer=new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene,camera));
+  bloomPass=new UnrealBloomPass(new THREE.Vector2(stage.clientWidth||1,stage.clientHeight||1), 0.42, 0.4, 1.05);
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+}catch(e){ composer=null; console.warn('bloom unavailable, falling back to direct render', e); }
+function renderFrame(){ if(composer) composer.render(); else renderer.render(scene,camera); }
+
+/* ---------- shared geometry & textures ---------- */
+const GEO = {
+  cube: new THREE.BoxGeometry(1,1,1),
+  slotCube: new THREE.BoxGeometry(1.32,1.32,1.32),
+  ring: new THREE.RingGeometry(0.78, 0.98, 32),
+  sphere: new THREE.SphereGeometry(0.34, 20, 16),
+  packet: new THREE.BoxGeometry(0.55,0.55,0.55),
+};
+const SHARED_GEO = new Set(Object.values(GEO));
+function disposeTree(root){
+  root.traverse(o=>{
+    if(o.material){ o.material.map?.dispose?.(); o.material.dispose?.(); }
+    if(o.geometry && !SHARED_GEO.has(o.geometry)) o.geometry.dispose();
+  });
+}
+function radialTex(inner='rgba(255,255,255,1)', outer='rgba(255,255,255,0)'){
+  const cv=document.createElement('canvas'); cv.width=cv.height=128;
+  const g=cv.getContext('2d'); const gr=g.createRadialGradient(64,64,2,64,64,62);
+  gr.addColorStop(0,inner); gr.addColorStop(0.35,inner.replace(',1)',',0.45)')); gr.addColorStop(1,outer);
+  g.fillStyle=gr; g.fillRect(0,0,128,128);
+  const tx=new THREE.CanvasTexture(cv); return tx;
+}
+const glowTex = radialTex();
+function glowSprite(color, scale, opacity=0.85){
+  const m=new THREE.SpriteMaterial({ map:glowTex, color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false });
+  const s=new THREE.Sprite(m); s.scale.setScalar(scale); return s;
+}
+function textSprite(text, {fs=42, color='#dfe6f2', bg='rgba(7,11,20,0.8)', pad=14, scaleMul=1, maxText='E128 · 12.3'}={}){
+  const cv=document.createElement('canvas'); const g=cv.getContext('2d');
+  const font=`600 ${fs}px 'IBM Plex Sans Thai','Space Grotesk',Tahoma,sans-serif`;
+  g.font=font;
+  // fixed canvas size (never resized after upload, avoids GL copy-subtexture overflow)
+  cv.width=Math.max(2, Math.ceil(g.measureText(maxText).width)+pad*2);
+  cv.height=Math.ceil(fs+pad*1.4);
+  const tx=new THREE.CanvasTexture(cv); tx.minFilter=THREE.LinearFilter;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({ map:tx, transparent:true, depthWrite:false }));
+  sp.scale.set(cv.width/64*scaleMul, cv.height/64*scaleMul, 1);
+  const draw=(t)=>{
+    g.font=font; g.clearRect(0,0,cv.width,cv.height);
+    const tw=Math.min(cv.width, Math.ceil(g.measureText(t).width)+pad*2);
+    const x0=(cv.width-tw)/2;
+    g.fillStyle=bg; g.beginPath(); g.roundRect(x0,0,tw,cv.height,12); g.fill();
+    g.fillStyle=color; g.textBaseline='middle'; g.textAlign='center'; g.fillText(t,cv.width/2,cv.height/2+2);
+    tx.needsUpdate=true;
+  };
+  draw(text);
+  sp.userData.setText = draw;
+  return sp;
+}
+function edgesBox(w,h,d,color,opacity=0.55){
+  const g=new THREE.EdgesGeometry(new THREE.BoxGeometry(w,h,d));
+  return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color, transparent:true, opacity }));
+}
+function slab(w,d,color,edgeColor){
+  const grp=new THREE.Group();
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,0.7,d), new THREE.MeshStandardMaterial({ color:0x0b1322, roughness:0.85, metalness:0.25 }));
+  m.position.y=0; grp.add(m);
+  const e=edgesBox(w,0.72,d,edgeColor,0.8); e.position.y=0; grp.add(e);
+  const glow=glowSprite(edgeColor, Math.max(w,d)*1.15, 0.10); glow.position.y=-0.2; grp.add(glow);
+  return grp;
+}
+function beamCurve(a, b, lift=3){
+  const mid=a.clone().add(b).multiplyScalar(0.5); mid.y+=lift;
+  return new THREE.QuadraticBezierCurve3(a, mid, b);
+}
+function beamMesh(curve, color, radius=0.05, opacity=0.9){
+  const g=new THREE.TubeGeometry(curve, 24, radius, 6, false);
+  const m=new THREE.MeshBasicMaterial({ color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false });
+  return new THREE.Mesh(g,m);
+}
+
+/* ============================================================
+   world layout
+============================================================ */
+const world = new THREE.Group(); scene.add(world);
+const GPU_X=-12, RAM_X=13;
+
+// floor grid
+const grid = new THREE.GridHelper(120, 60, 0x16233c, 0x0e1729);
+grid.position.y=-0.36; grid.material.transparent=true; grid.material.opacity=0.5; world.add(grid);
+
+// slabs
+const gpuSlab = slab(17.5, 14.5, 0x0b1322, C.cyan); gpuSlab.position.set(GPU_X,0,0); world.add(gpuSlab);
+const ramSlab = slab(15.5, 15.5, 0x0b1322, C.amber); ramSlab.position.set(RAM_X,0,0); world.add(ramSlab);
+
+// attention block (always on GPU)
+const attn = new THREE.Group();
+const attnBox = new THREE.Mesh(new THREE.BoxGeometry(2.6,1.5,2.6), new THREE.MeshStandardMaterial({ color:0x12303f, emissive:C.cyanD, emissiveIntensity:0.7, roughness:0.5, metalness:0.4 }));
+attnBox.position.y=1.1; attn.add(attnBox);
+const attnEdges=edgesBox(2.62,1.52,2.62,C.cyan,0.9); attnEdges.position.copy(attnBox.position); attn.add(attnEdges);
+const attnGlow=glowSprite(C.cyan,4,0.3); attnGlow.position.set(0,1.6,0); attn.add(attnGlow);
+attn.position.set(GPU_X-6.2,0.35,-4.6); world.add(attn);
+
+// router
+const router = new THREE.Group();
+const routerCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.85), new THREE.MeshStandardMaterial({ color:0x0d3a4a, emissive:C.cyan, emissiveIntensity:1.4, roughness:0.3, metalness:0.6 }));
+router.add(routerCore);
+const routerRing = new THREE.Mesh(new THREE.TorusGeometry(1.35,0.05,10,48), new THREE.MeshBasicMaterial({ color:C.cyan, transparent:true, opacity:0.65, blending:THREE.AdditiveBlending }));
+routerRing.rotation.x=Math.PI/2; router.add(routerRing);
+router.add(glowSprite(C.cyan,5,0.5));
+router.position.set(GPU_X,1.9,5.3); world.add(router);
+
+// output gate
+const outGate = new THREE.Group();
+const outRing = new THREE.Mesh(new THREE.TorusGeometry(0.9,0.09,10,40), new THREE.MeshStandardMaterial({ color:0x123a2a, emissive:C.green, emissiveIntensity:1.1 }));
+outGate.add(outRing);
+outGate.add(glowSprite(C.green,3.4,0.4));
+outGate.position.set(GPU_X,1.6,-6.1); world.add(outGate);
+
+// PCIe bridge
+const bridge = new THREE.Group();
+const lane = new THREE.Mesh(new THREE.BoxGeometry(9.4,0.16,1.7), new THREE.MeshStandardMaterial({ color:0x101a2e, emissive:0x2a1840, emissiveIntensity:0.8, roughness:0.6 }));
+bridge.add(lane);
+const chevCv=document.createElement('canvas'); chevCv.width=256; chevCv.height=32;
+{ const g=chevCv.getContext('2d'); g.strokeStyle='rgba(180,79,255,0.9)'; g.lineWidth=5;
+  for(let x=-16;x<272;x+=32){ g.beginPath(); g.moveTo(x,28); g.lineTo(x+14,16); g.lineTo(x,4); g.stroke(); } }
+const chevTx=new THREE.CanvasTexture(chevCv); chevTx.wrapS=THREE.RepeatWrapping; chevTx.repeat.x=3;
+const chevPlane=new THREE.Mesh(new THREE.PlaneGeometry(9.4,1.5), new THREE.MeshBasicMaterial({ map:chevTx, transparent:true, opacity:0.75, blending:THREE.AdditiveBlending, depthWrite:false }));
+chevPlane.rotation.x=-Math.PI/2; chevPlane.position.y=0.1; bridge.add(chevPlane);
+bridge.add(edgesBox(9.4,0.18,1.7,C.violet,0.5));
+bridge.position.set(1,0.75,0); world.add(bridge);
+let bridgeActivity=0;
+
+// CPU chip
+const cpuChip = new THREE.Group();
+const cpuBox = new THREE.Mesh(new THREE.BoxGeometry(3.2,0.8,1.7), new THREE.MeshStandardMaterial({ color:0x241a08, emissive:C.amber, emissiveIntensity:0.8, roughness:0.4, metalness:0.5 }));
+cpuChip.add(cpuBox);
+cpuChip.add(edgesBox(3.22,0.82,1.72,C.amber,0.9));
+cpuChip.add(glowSprite(C.amber,4.5,0.35));
+cpuChip.position.set(RAM_X,0.85,6.7); world.add(cpuChip);
+let cpuPulse=0;
+
+// VRAM capacity box (chapter 1)
+const vramBox = edgesBox(6.5,3.4,6.5,C.red,0.85);
+vramBox.position.set(GPU_X,2.1,0); vramBox.visible=false; world.add(vramBox);
+
+// ambient drifting particles
+{
+  const N=260, pos=new Float32Array(N*3);
+  for(let i=0;i<N;i++){ pos[i*3]=(Math.random()-0.5)*70; pos[i*3+1]=Math.random()*22; pos[i*3+2]=(Math.random()-0.5)*50; }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const pts=new THREE.Points(g, new THREE.PointsMaterial({ color:0x3a5a8a, size:0.14, transparent:true, opacity:0.55, blending:THREE.AdditiveBlending, depthWrite:false }));
+  pts.userData.drift=true; world.add(pts);
+}
+
+/* ---------- expert wall (RAM) & cache slots (GPU) ---------- */
+let expertGroup=new THREE.Group(); world.add(expertGroup);
+let cacheGroup=new THREE.Group(); world.add(cacheGroup);
+let expertMeshes=[], slotFrames=[], slotCubes=[], slotRings=[], slotLabels=[];
+let expertBaseColors=[];
+
+function expertColor(e){ const h=(e*0.61803398875)%1; return new THREE.Color().setHSL(h,0.62,0.55); }
+
+function buildExpertWall(n){
+  world.remove(expertGroup); disposeTree(expertGroup);
+  expertGroup=new THREE.Group(); world.add(expertGroup);
+  expertMeshes=[]; expertBaseColors=[];
+  const cols = n<=64?8:12, sp = n<=64?1.55:1.16, size=n<=64?1.0:0.78;
+  const rows=Math.ceil(n/cols);
+  for(let e=0;e<n;e++){
+    const col=e%cols, row=Math.floor(e/cols);
+    const x=RAM_X+(col-(cols-1)/2)*sp, z=-0.6+(row-(rows-1)/2)*sp;
+    const base=expertColor(e); expertBaseColors.push(base);
+    const mat=new THREE.MeshStandardMaterial({ color:base.clone().multiplyScalar(0.5), emissive:base, emissiveIntensity:0.16, roughness:0.55, metalness:0.3 });
+    const m=new THREE.Mesh(GEO.cube, mat);
+    m.scale.setScalar(size); m.position.set(x,0.35+size/2,z);
+    m.userData={ expert:e, home:m.position.clone(), size };
+    expertGroup.add(m); expertMeshes.push(m);
+  }
+}
+function cacheLayout(n){ const cols=n<=4?2:n<=16?4:8; return { cols, rows:Math.ceil(n/cols), sp:2.15 }; }
+function slotPos(i, n){
+  const {cols,rows,sp}=cacheLayout(n);
+  const col=i%cols, row=Math.floor(i/cols);
+  return new THREE.Vector3(GPU_X+0.4+(col-(cols-1)/2)*sp, 0.35+0.72, -0.9+(row-(rows-1)/2)*sp);
+}
+function buildCacheSlots(n){
+  world.remove(cacheGroup); disposeTree(cacheGroup);
+  cacheGroup=new THREE.Group(); world.add(cacheGroup);
+  slotFrames=[]; slotCubes=[]; slotRings=[]; slotLabels=[];
+  for(let i=0;i<n;i++){
+    const p=slotPos(i,n);
+    const frame=edgesBox(1.62,1.5,1.62,0x2a3c5e,0.75); frame.position.copy(p); cacheGroup.add(frame); slotFrames.push(frame);
+    const ring=new THREE.Mesh(GEO.ring, new THREE.MeshBasicMaterial({ color:CLASS_COLORS[0], transparent:true, opacity:0.85, side:THREE.DoubleSide, blending:THREE.AdditiveBlending, depthWrite:false }));
+    ring.rotation.x=-Math.PI/2; ring.position.set(p.x,0.42,p.z); ring.visible=false; cacheGroup.add(ring); slotRings.push(ring);
+    const cube=new THREE.Mesh(GEO.slotCube, new THREE.MeshStandardMaterial({ color:0x222, emissive:0x222, emissiveIntensity:0.4, roughness:0.4, metalness:0.35 }));
+    cube.position.copy(p); cube.visible=false; cacheGroup.add(cube); slotCubes.push(cube);
+    const lbl=textSprite('', {fs:30, color:'#cfe3ff', bg:'rgba(7,11,20,0.72)', pad:10, scaleMul:0.62});
+    lbl.position.set(p.x, p.y+1.35, p.z); lbl.visible=false; cacheGroup.add(lbl); slotLabels.push(lbl);
+  }
+}
+
+/* ============================================================
+   world labels (DOM, projected)
+============================================================ */
+const labelLayer=$('labels');
+const worldLabels=[];
+function addLabel(text, pos, cls=''){ const el=document.createElement('div'); el.className='wlabel '+cls; el.textContent=text; labelLayer.appendChild(el); worldLabels.push({el,pos:pos.clone(),fixed:true}); return el; }
+addLabel('GPU · VRAM', new THREE.Vector3(GPU_X,0.6,-7.6),'gpu');
+addLabel('RAM · expert ทั้งหมด', new THREE.Vector3(RAM_X,0.6,-8.6),'ram');
+addLabel('Router (gate)', new THREE.Vector3(GPU_X,3.6,5.3),'gpu');
+addLabel('Attention + ส่วนกลาง · อยู่ GPU เสมอ', new THREE.Vector3(GPU_X-6.2,2.9,-4.6),'gpu');
+addLabel('PCIe · เลนอัปโหลด', new THREE.Vector3(1,2.1,0),'');
+addLabel('CPU', new THREE.Vector3(RAM_X,2.2,6.7),'ram');
+addLabel('เอาต์พุต token', new THREE.Vector3(GPU_X,3.0,-6.1),'');
+const cacheTitleEl=addLabel('แคช expert · 0/16', new THREE.Vector3(GPU_X+0.4,3.4,-0.9),'gpu');
+const vramLabelEl=addLabel('VRAM จุ expert ทั้งหมดไม่ไหว', new THREE.Vector3(GPU_X,4.4,0),'');
+vramLabelEl.style.display='none';
+let labelsOn=true, ringsOn=true, glowMul=1, wantAutoRotate=false;
+
+/* ============================================================
+   simulation — faithful port of llama-moe-cache.cpp (ClassLRU)
+============================================================ */
+class CacheSim {
+  constructor(cfg){ this.cfg=cfg; this.seed=1234; this.reset(); }
+  reset(){
+    const {nExperts,nSlots,topK}=this.cfg;
+    this.nExperts=nExperts; this.nSlots=nSlots; this.topK=Math.min(topK,nSlots);
+    this.clock=0; this.tokens=0;
+    this.crf=new Float64Array(nExperts); this.lastUse=new Int32Array(nExperts).fill(-100000);
+    this.slotOf=new Int32Array(nExperts).fill(-1);
+    this.keyOf=new Int32Array(nSlots).fill(-1);
+    this.classOfSlot=new Int32Array(nSlots);
+    this.prev=new Int32Array(nSlots).fill(-1); this.next=new Int32Array(nSlots).fill(-1);
+    this.head=new Int32Array(8).fill(-1); this.tail=new Int32Array(8).fill(-1);
+    for(let s=0;s<nSlots;s++){ this.prev[s]=s-1; this.next[s]=s+1<nSlots?s+1:-1; }
+    this.head[0]=0; this.tail[0]=nSlots-1;
+    this.nFilled=0; this.cpuAcc=0;
+    this.rng=mulberry(this.seed);
+    this.ranks=[...Array(nExperts).keys()];
+    for(let i=nExperts-1;i>0;i--){ const j=Math.floor(this.rng()*(i+1)); [this.ranks[i],this.ranks[j]]=[this.ranks[j],this.ranks[i]]; }
+    this.weightOf=new Float64Array(nExperts);
+    this.prevIds=[];
+    this.emaHit=0; this.emaUp=0; this.emaMs=this.baselineMs(); this.emaGpu=0; this.emaCpu=0;
+    this.rebuildWeights();
+  }
+  rebuildWeights(){
+    const a=this.cfg.skew*2.2; // zipf exponent 0..2.2
+    for(let r=0;r<this.nExperts;r++) this.weightOf[this.ranks[r]]=1/Math.pow(r+2,a);
+  }
+  baselineMs(){ return msFor(this.topK*T.expertMiB, T.upGiBs)+T.baseMs; }
+  pickExperts(){
+    const k=this.topK, ids=[];
+    const reuse = this.cfg.skew*0.55;
+    while(ids.length<k){
+      let e;
+      if(this.prevIds.length && this.rng()<reuse){ e=this.prevIds[Math.floor(this.rng()*this.prevIds.length)]; }
+      else {
+        let tot=0; for(let i=0;i<this.nExperts;i++) tot+=this.weightOf[i];
+        let r=this.rng()*tot; e=0;
+        for(let i=0;i<this.nExperts;i++){ r-=this.weightOf[i]; if(r<=0){ e=i; break; } }
+      }
+      if(!ids.includes(e)) ids.push(e);
+    }
+    this.prevIds=ids; return ids;
+  }
+  decayed(e){ const hl=this.cfg.halfLife; return this.crf[e]*Math.pow(2,-(this.clock-this.lastUse[e])/hl); }
+  classOf(e){ return Math.min(7, Math.floor(Math.log2(Math.max(1e-9,this.crf[e])))); }
+  unlink(s){ const c=this.classOfSlot[s]; const p=this.prev[s], n=this.next[s];
+    if(p>=0) this.next[p]=n; else this.head[c]=n;
+    if(n>=0) this.prev[n]=p; else this.tail[c]=p;
+    this.prev[s]=this.next[s]=-1; }
+  moveMRU(s,c){ this.unlink(s); this.classOfSlot[s]=c;
+    const t=this.tail[c];
+    if(t<0){ this.head[c]=this.tail[c]=s; this.prev[s]=this.next[s]=-1; }
+    else { this.next[t]=s; this.prev[s]=t; this.next[s]=-1; this.tail[c]=s; } }
+  victim(protectedSet){
+    if(this.nFilled<this.nSlots){ for(let s=0;s<this.nSlots;s++) if(this.keyOf[s]<0) return {slot:s, evicted:-1}; }
+    let best=-1, bestScore=-1;
+    for(let c=0;c<8;c++){
+      let s=this.head[c];
+      while(s>=0 && protectedSet.has(s)) s=this.next[s];
+      if(s<0) continue;
+      const age=this.clock-this.lastUse[this.keyOf[s]];
+      const score=age/Math.pow(2,c);
+      if(score>bestScore){ bestScore=score; best=s; }
+    }
+    return { slot:best, evicted:best>=0?this.keyOf[best]:-1 };
+  }
+  step(cacheEnabled){
+    this.clock++; this.tokens++;
+    const ids=this.pickExperts();
+    const hits=[], uploads=[], cpus=[];
+    if(!cacheEnabled){
+      for(const e of ids) uploads.push({e, slot:-1, evicted:-1});
+    } else {
+      // CRF update + promote hits first (as in plan())
+      const misses=[];
+      for(const e of ids){
+        this.crf[e]=this.decayed(e)+1; this.lastUse[e]=this.clock;
+        if(this.slotOf[e]>=0){ const s=this.slotOf[e]; this.moveMRU(s,this.classOf(e)); hits.push({e,slot:s}); }
+        else misses.push(e);
+      }
+      // cpu share with fractional carry, only once full (as in impl)
+      const shareQ=Math.round(this.cfg.cpuShare*65536);
+      const sq=(this.nFilled===this.nSlots)?shareQ:0;
+      const acc=misses.length*sq+this.cpuAcc; this.cpuAcc=acc&0xffff;
+      let nCpu=Math.min(acc>>16, misses.length);
+      misses.sort((a,b)=> this.crf[a]!==this.crf[b]? this.crf[a]-this.crf[b] : a-b);
+      const cpuSet=new Set(misses.slice(0,nCpu));
+      for(const e of cpuSet) cpus.push({e});
+      const ups=misses.filter(e=>!cpuSet.has(e)).sort((a,b)=>a-b);
+      const prot=new Set(hits.map(h=>h.slot));
+      for(const e of ups){
+        const v=this.victim(prot);
+        if(v.evicted>=0) this.slotOf[v.evicted]=-1; else this.nFilled++;
+        prot.add(v.slot);
+        this.keyOf[v.slot]=e; this.slotOf[e]=v.slot;
+        this.moveMRU(v.slot,this.classOf(e));
+        uploads.push({e, slot:v.slot, evicted:v.evicted});
+      }
+    }
+    // timing model (scaled to all MoE layers)
+    const gpuMs=msFor(uploads.length*T.expertMiB,T.upGiBs)+this.topK*T.gpuComputeMs;
+    const cpuMs=cpus.length? msFor(cpus.length*T.expertMiB,T.cpuGiBs)+T.gpuComputeMs : 0;
+    const tokenMs=T.baseMs+Math.max(gpuMs,cpuMs);
+    const a=0.12;
+    this.emaHit=lerp(this.emaHit,hits.length/this.topK,a);
+    this.emaUp=lerp(this.emaUp,uploads.length,a);
+    this.emaMs=lerp(this.emaMs,tokenMs,a);
+    this.emaGpu=lerp(this.emaGpu,gpuMs,a); this.emaCpu=lerp(this.emaCpu,cpuMs,a);
+    return { ids, hits, uploads, cpus, gpuMs, cpuMs, tokenMs };
+  }
+}
+
+/* ============================================================
+   app state
+============================================================ */
+const cfg={ nExperts:64, nSlots:16, topK:6, cpuShare:0, skew:0.65, halfLife:128 };
+const sim=new CacheSim(cfg);
+let cacheEnabled=false;         // chapter 2 = no cache
+let playing=false, speed=1.25, chapter=0, tourOn=false, tourT=0;
+const TOUR_SEC=28;
+let tokenActor=null, spawnCooldown=0;
+const effects=[];               // transient beams/packets/pulses
+let introFly=null;              // chapter-1 expert migration
+
+buildExpertWall(cfg.nExperts);
+buildCacheSlots(cfg.nSlots);
+
+/* ============================================================
+   visual sync of cache state
+============================================================ */
+function heat(crf){ return clamp(crf/8,0,1); }
+function syncCacheVisuals(){
+  for(let s=0;s<cfg.nSlots;s++){
+    const e=sim.keyOf[s];
+    const cube=slotCubes[s], ring=slotRings[s], lbl=slotLabels[s];
+    if(e<0){ cube.visible=false; ring.visible=false; lbl.visible=false; continue; }
+    cube.visible=true;
+    const base=expertBaseColors[e];
+    const h=heat(sim.crf[e]);
+    cube.material.color.copy(base).multiplyScalar(0.45+h*0.4);
+    cube.material.emissive.copy(base);
+    cube.material.emissiveIntensity=glowMul*(0.3+h*1.15);
+    const c=sim.classOfSlot[s];
+    ring.visible=ringsOn; ring.material.color.setHex(CLASS_COLORS[c]);
+    ring.material.opacity=0.4+h*0.5;
+    lbl.visible=labelsOn;
+    const txt = chapter===4? `E${e} · ${sim.crf[e].toFixed(1)}` : `E${e}`;
+    if(lbl.userData.lastTxt!==txt){ lbl.userData.setText(txt); lbl.userData.lastTxt=txt; }
+  }
+  cacheTitleEl.textContent=`แคช expert · ${sim.nFilled}/${cfg.nSlots}`;
+}
+
+/* ============================================================
+   effects & token actor
+============================================================ */
+const tokenSpawn=new THREE.Vector3(GPU_X,2.4,10.8);
+const routerPos=new THREE.Vector3(GPU_X,1.9,5.3);
+const outPos=new THREE.Vector3(GPU_X,1.6,-6.1);
+
+function addEffect(obj, ttl, update){ scene.add(obj); effects.push({obj,ttl,age:0,update}); }
+function spawnPulse(pos,color,scale=2.4){
+  const sp=glowSprite(color,scale,0.9); sp.position.copy(pos);
+  addEffect(sp,0.5,(o,k)=>{ o.material.opacity=0.9*(1-k); o.scale.setScalar(scale*(1+k*1.6)); });
+}
+function spawnRingRipple(pos,color){
+  const m=new THREE.Mesh(GEO.ring,new THREE.MeshBasicMaterial({color,transparent:true,opacity:0.9,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}));
+  m.rotation.x=-Math.PI/2; m.position.set(pos.x,0.45,pos.z);
+  addEffect(m,0.6,(o,k)=>{ o.scale.setScalar(1+k*2.2); o.material.opacity=0.9*(1-k); });
+}
+function spawnBeam(a,b,color,lift=3,ttl=0.6){
+  const mesh=beamMesh(beamCurve(a,b,lift),color);
+  addEffect(mesh,ttl,(o,k)=>{ o.material.opacity=0.9*(1-k); });
+  const pulse=new THREE.Mesh(GEO.sphere,new THREE.MeshBasicMaterial({color,transparent:true,opacity:1,blending:THREE.AdditiveBlending}));
+  pulse.scale.setScalar(0.5);
+  const curve=beamCurve(a,b,lift);
+  addEffect(pulse,ttl,(o,k)=>{ curve.getPoint(easeOut(k),o.position); o.material.opacity=1-k*0.6; });
+}
+function spawnUploadPacket(expert, slotIdx, delay=0){
+  const from=expertMeshes[expert].position.clone();
+  const to=slotPos(slotIdx,cfg.nSlots).clone();
+  const curve=new THREE.QuadraticBezierCurve3(from, new THREE.Vector3(1,4.6,0), to);
+  const grp=new THREE.Group();
+  const box=new THREE.Mesh(GEO.packet,new THREE.MeshBasicMaterial({color:C.magenta,transparent:true,opacity:1,blending:THREE.AdditiveBlending}));
+  grp.add(box); grp.add(glowSprite(C.magenta,2.6,0.9));
+  grp.visible=false;
+  const base=expertBaseColors[expert];
+  addEffect(grp,0.85+delay,(o,k)=>{
+    const kk=clamp((k*(0.85+delay)-delay)/0.85,0,1);
+    o.visible=kk>0;
+    if(kk>0){ curve.getPoint(easeIO(kk),o.position); o.rotation.y+=0.1; o.children[0].material.color.copy(base).lerp(new THREE.Color(C.magenta),0.5); }
+    if(kk>=1 && !o.userData.done){ o.userData.done=true; arriveExpert(expert,slotIdx); }
+  });
+}
+function arriveExpert(e,s){
+  const cube=slotCubes[s]; cube.visible=true; cube.scale.setScalar(0.01);
+  cube.userData.pop=0;
+  spawnPulse(cube.position,C.magenta,2.6);
+  SFX.miss();
+}
+function spawnCpuResult(expert){
+  const from=expertMeshes[expert].position.clone();
+  const curve=beamCurve(from,outPos.clone().add(new THREE.Vector3(2,1.5,0)),4);
+  const sp=glowSprite(C.amber,1.8,0.95);
+  addEffect(sp,0.7,(o,k)=>{ curve.getPoint(easeIO(k),o.position); o.material.opacity=0.95*(1-k*0.5); });
+}
+function evictVisual(slotIdx, oldExpert){
+  const cube=slotCubes[slotIdx];
+  const ghost=new THREE.Mesh(GEO.slotCube,new THREE.MeshBasicMaterial({color:C.red,transparent:true,opacity:0.85,blending:THREE.AdditiveBlending}));
+  ghost.position.copy(cube.position); ghost.scale.copy(cube.scale);
+  addEffect(ghost,0.5,(o,k)=>{ o.scale.setScalar(1.32*(1-k*0.8)); o.position.y=cube.position.y-k*2.2; o.material.opacity=0.7*(1-k); });
+  spawnPulse(cube.position,C.red,1.8);
+  slotFrames[slotIdx].material.color.setHex(C.red);
+  setTimeout(()=>slotFrames[slotIdx]?.material.color.setHex(0x2a3c5e),450);
+  SFX.evict();
+}
+
+class TokenActor {
+  constructor(result){
+    this.r=result; this.t=0; this.phase=0; this.resolved=false; this.trailT=0;
+    this.mesh=new THREE.Mesh(GEO.sphere,new THREE.MeshBasicMaterial({color:0xffffff}));
+    this.mesh.scale.setScalar(1.0);
+    this.glow=glowSprite(C.cyan,3.2,0.8);
+    this.grp=new THREE.Group(); this.grp.add(this.mesh); this.grp.add(this.glow);
+    this.grp.position.copy(tokenSpawn); scene.add(this.grp);
+    this.dur=[0.35,0.3,0.85,0.35].map(d=>d/speed);
+  }
+  update(dt){
+    this.t+=dt;
+    this.trailT+=dt;
+    if((this.phase===0||this.phase===3) && this.trailT>0.04){
+      this.trailT=0;
+      const sp=glowSprite(C.cyan,1.3,0.5);
+      sp.position.copy(this.grp.position);
+      addEffect(sp,0.4,(o,k)=>{ o.material.opacity=0.5*(1-k); o.scale.setScalar(1.3*(1-k*0.6)); });
+    }
+    const r=this.r;
+    if(this.phase===0){
+      const k=clamp(this.t/this.dur[0],0,1);
+      this.grp.position.lerpVectors(tokenSpawn,routerPos,easeIO(k));
+      this.grp.position.y+=Math.sin(k*Math.PI)*1.4;
+      if(k>=1){ this.phase=1; this.t=0; this.route(); }
+    } else if(this.phase===1){
+      routerCore.rotation.y+=dt*9; routerCore.material.emissiveIntensity=2.4*glowMul;
+      if(this.t>=this.dur[1]){ this.phase=2; this.t=0; this.resolve(); }
+    } else if(this.phase===2){
+      if(this.t>=this.dur[2]){ this.phase=3; this.t=0; }
+    } else {
+      const k=clamp(this.t/this.dur[3],0,1);
+      this.grp.position.lerpVectors(routerPos,outPos,easeIO(k));
+      this.grp.position.y+=Math.sin(k*Math.PI)*1.2;
+      this.glow.material.opacity=0.8*(1-k*0.7);
+      if(k>=1){ this.finish(); return false; }
+    }
+    return true;
+  }
+  route(){
+    const r=this.r;
+    routerCore.material.emissiveIntensity=1.4*glowMul;
+    spawnPulse(routerPos,C.cyan,3.4);
+    for(const h of r.hits){
+      const p=slotPos(h.slot,cfg.nSlots);
+      spawnBeam(routerPos,p,C.green,2.2,0.7);
+    }
+    for(const u of r.uploads){
+      const p=expertMeshes[u.e].position;
+      spawnBeam(routerPos,p,C.magenta,3.5,0.8);
+    }
+    for(const c of r.cpus){
+      const p=expertMeshes[c.e].position;
+      spawnBeam(routerPos,p,C.amber,3.5,0.8);
+    }
+  }
+  resolve(){
+    const r=this.r;
+    for(const h of r.hits){
+      const cube=slotCubes[h.slot];
+      if(cube){ cube.userData.flash=1; spawnRingRipple(cube.position,C.green); }
+      expertMeshes[h.e].material.emissiveIntensity=1.4*glowMul;
+    }
+    if(r.hits.length) SFX.hit();
+    for(const u of r.uploads){
+      if(u.evicted>=0) evictVisual(u.slot,u.evicted);
+      if(u.slot>=0){ spawnUploadPacket(u.e,u.slot,u.evicted>=0?0.22:0); bridgeActivity=1; }
+      else { // no-cache mode: upload straight to router then vanish
+        const p=expertMeshes[u.e].position;
+        const curve=beamCurve(p,routerPos,4);
+        const sp=glowSprite(C.magenta,2.2,0.95);
+        addEffect(sp,0.8,(o,k)=>{ curve.getPoint(easeIO(k),o.position); o.material.opacity=0.95*(1-k*0.4); });
+        bridgeActivity=1; SFX.miss();
+      }
+      expertMeshes[u.e].material.emissiveIntensity=1.2*glowMul;
+    }
+    for(const c of r.cpus){
+      expertMeshes[c.e].material.emissiveIntensity=1.6*glowMul;
+      cpuPulse=1; spawnCpuResult(c.e);
+    }
+    if(r.cpus.length) SFX.cpu();
+    updateHUD();
+  }
+  finish(){
+    scene.remove(this.grp);
+    this.mesh.material.dispose(); this.glow.material.dispose();
+    spawnPulse(outPos,C.green,2.6);
+    SFX.out();
+  }
+}
+
+/* ============================================================
+   HUD
+============================================================ */
+function updateHUD(){
+  const tps=1000/sim.emaMs;
+  $('stTps').innerHTML=`${tps.toFixed(1)}<span class="u">t/s</span>`;
+  $('stHit').innerHTML=`${(sim.emaHit*100).toFixed(0)}<span class="u">%</span>`;
+  $('stUp').textContent=sim.emaUp.toFixed(1);
+  $('stSpd').innerHTML=`${(sim.baselineMs()/sim.emaMs).toFixed(1)}<span class="u">×</span>`;
+  const scale=sim.baselineMs();
+  $('tbGpu').style.width=clamp(sim.emaGpu/scale*100,1.5,100)+'%';
+  $('tbCpu').style.width=clamp(sim.emaCpu/scale*100,sim.emaCpu>0?1.5:0,100)+'%';
+  $('tbGpuMs').textContent=sim.emaGpu.toFixed(1)+' ms';
+  $('tbCpuMs').textContent=sim.emaCpu.toFixed(1)+' ms';
+  $('tbTotal').textContent=(sim.emaMs).toFixed(1)+' ms/token';
+}
+
+/* ============================================================
+   chapters
+============================================================ */
+const CAMS={
+  overview:{p:[1,25,31],t:[0,0.5,0]},
+  problem:{p:[3,19,27],t:[1,1,0]},
+  router:{p:[-20,11,19],t:[-12,1.5,2]},
+  cache:{p:[-11,13,12],t:[-11.5,1,-1]},
+  classlru:{p:[-10.5,9.5,7.5],t:[-11.5,1,-1.2]},
+  cpulane:{p:[3,17,25],t:[1,1,0]},
+  summary:{p:[0,29,34],t:[0,0,0]},
+  ram:{p:[22,12,17],t:[13,1,-0.5]},
+  bridge:{p:[1,9,15],t:[1,1,0]},
+};
+let camTween=null;
+function flyTo(name,dur=1.4){
+  const c=CAMS[name]; if(!c) return;
+  camTween={ t:0, dur, fp:camera.position.clone(), tp:new THREE.Vector3(...c.p), ft:controls.target.clone(), tt:new THREE.Vector3(...c.t) };
+  controls.enabled=false;
+}
+renderer.domElement.addEventListener('pointerdown',()=>{ camTween=null; controls.enabled=true; });
+
+const chapters=[
+{
+  cam:'problem', title:'ปัญหา: expert ล้น VRAM',
+  body:`<p><b>MoE (Mixture of Experts)</b> คือโมเดลที่ไม่ได้ใช้ FFN ก้อนเดียวกับทุก token แต่มี <span class="c-amber">"ผู้เชี่ยวชาญ" หรือ expert หลายสิบถึงหลายร้อยตัว</span> แล้วให้ router เลือกว่า token นี้จะใช้ตัวไหนบ้าง ข้อดีคือความรู้เยอะ แต่ใช้พลังคำนวณน้อย</p>
+  <p>แต่ weight ของ expert <b>ทั้งหมด</b> กิน memory มหาศาล อย่าง Qwen3-Next 80B มี expert รวมกันราว <b>64 GB</b> ยัดลง VRAM การ์ดจอทั่วไปไม่ไหว</p>
+  <p>ทางออกที่คนใช้กันคือ flag <code class="chip">-cmoe</code> ย้าย expert ไปฝากไว้ที่ <span class="c-amber">RAM</span> ก่อน แล้วค่อยอัปโหลดตัวที่ถูกเลือกข้าม <span class="c-mag">PCIe</span> มา GPU ทีละ token ซึ่งช้ามาก เพราะต้องขนข้อมูลใหม่ทุก token</p>`,
+  callout:'ลองดูในฉาก: พอ expert สีแดงล้นกล่อง VRAM มันก็บินไปตั้งแถวรอที่ RAM นี่แหละจุดเริ่มต้นของปัญหาทั้งหมด',
+  enter(){ cacheEnabled=false; vramBox.visible=true; vramLabelEl.style.display=''; startIntroFly(); $('timebar').classList.add('hide'); }
+},
+{
+  cam:'router', title:'Router เลือกใครบ้าง?',
+  body:`<p>ทุก token ที่วิ่งผ่านเลเยอร์ MoE จะมี <span class="c-cyan">router (gate)</span> คอยให้คะแนน expert ทั้งหมด แล้วเลือกตัวคะแนนดีสุดมา <b>top-k</b> ตัว (โมเดลจริงอาจเลือก 8 จาก 128) พร้อมน้ำหนักไว้รวมผลลัพธ์</p>
+  <p>ถ้า<b>ยังไม่มี cache</b>: expert ทุกตัวที่ถูกเลือกซึ่งอยู่ใน RAM ต้องอัปโหลดข้าม PCIe <span class="c-mag">ใหม่ทุกครั้ง</span> แม้ token เมื่อกี้เพิ่งใช้ตัวเดิมไปก็ตาม</p>
+  <p>สังเกตแถบเวลากับ HUD: ค่า <span class="c-mag">อัปโหลด/token</span> จะสูงเท่า k ตลอด ทำให้ t/s ต่ำมาก</p>`,
+  callout:'นี่คือโหมด "-cmoe เปล่า ๆ" กดเล่นแล้วสังเกตว่าทุกเส้นเป็นสีชมพู (อัปโหลด) ไม่มีสีเขียว (hit) เลย',
+  enter(){ cacheEnabled=false; vramBox.visible=false; vramLabelEl.style.display='none'; resetSim(false); $('timebar').classList.remove('hide'); }
+},
+{
+  cam:'cache', title:'ไอเดียหลัก: จองที่จอดใน VRAM',
+  body:`<p>ใช้ flag <code class="chip">--moe-cache-mib N</code> จองพื้นที่ <b>N MiB ใน VRAM</b> เป็น "ที่จอด" ของ expert ที่ใช้บ่อย ในฉากนี้ย่อเหลือ 16 ช่องให้เห็นชัด</p>
+  <p>ช่วงแรก cache ยังว่าง: ทุก <span class="c-mag">miss</span> (หาใน cache ไม่เจอ) จะถูกอัปโหลดเข้ามา<b>เก็บไว้ในช่อง</b>จนกว่าจะเต็ม เหมือนที่ docs บอกไว้ "until the cache is full every miss is uploaded"</p>
+  <p>พอ token ถัดมาเลือก expert ตัวเดิม = <span class="c-green">hit</span> อ่าน weight จาก VRAM มาคำนวณได้ทันที ไม่ต้องข้าม PCIe ลองดู <span class="c-green">hit rate</span> ค่อย ๆ ไต่ขึ้นตอนช่องเริ่มเต็ม</p>`,
+  callout:'ลองเลื่อน "ขนาด cache" ในห้องแล็บ ยิ่งจองเยอะยิ่ง hit บ่อย แต่แลกมากิน VRAM เพิ่ม (เครื่องจริงแบ่ง cache ตาม GPU ที่เลเยอร์สังกัด)',
+  enter(){ cacheEnabled=true; vramBox.visible=false; vramLabelEl.style.display='none'; resetSim(false); $('timebar').classList.remove('hide'); toast('เริ่ม cache ว่าง — ดูมันค่อย ๆ เต็ม'); }
+},
+{
+  cam:'cache', title:'Hit กับ Miss เดินทางคนละเส้น',
+  body:`<p><span class="c-green">Hit</span>: router ชี้ไปที่ช่องใน cache weight อยู่บน GPU รอแล้ว คำนวณต่อได้ทันที (เส้นเขียว) เสร็จในเสี้ยววินาที</p>
+  <p><span class="c-mag">Miss</span>: ต้องหา "เหยื่อ" ใน cache เพื่อ<span style="color:var(--red)">ไล่ expert ตัวเก่าออก</span> แล้วอัปโหลดตัวใหม่ข้าม PCIe (เส้นชมพู) ถึงจะคำนวณได้ การอัปโหลดนี่แหละคือตัวถ่วงความเร็วหลัก</p>
+  <p>เพราะฉะนั้น <b>ยิ่ง hit rate สูง = ยิ่งอัปโหลดน้อย = ยิ่งเร็ว</b> สังเกตแถบ GPU หดลงทุกครั้งที่ cache ทำงานฉลาดขึ้น</p>`,
+  callout:'ลองเพ่งที่ token ตัวหนึ่ง: เส้นเขียวจบแทบจะทันที ส่วนเส้นชมพูต้องรอกล่องข้อมูลวิ่งข้ามเลน PCIe ก่อน',
+  enter(){ cacheEnabled=true; $('timebar').classList.remove('hide'); }
+},
+{
+  cam:'classlru', title:'ไล่ใครออก? ClassLRU + CRF',
+  body:`<p>ไม่ได้ใช้ LRU ธรรมดา v1.0.0 ใช้ <b>ClassLRU</b> (PR #31233) ให้คะแนน <span class="c-amber">CRF</span> จากจำนวนครั้งที่ใช้ โดยคะแนนจะค่อย ๆ ลดลงตามเวลา:</p>
+  <div class="formula">CRF<sub>ใหม่</sub> = CRF<sub>เดิม</sub> × 2<sup>−(token ที่ผ่านไป / <em>128</em>)</sup> + 1</div>
+  <p>แบ่ง expert เป็น <b>8 คลาส</b> ตาม floor(log₂ CRF) ดูวงแหวนใต้ช่อง สีม่วง/ชมพูคือคลาสสูง (ใช้แทบทุก token) แต่ละคลาสมีคิว LRU ของตัวเอง ตอนจะไล่ เลือกตัวที่ <span class="c-mag">อายุ ÷ 2<sup>คลาส</sup></span> สูงสุด ตัวหายไปนานโดนไล่แม้เคยฮิต แต่คะแนน CRF ยังจำไว้ พอกลับมาใหม่จึงไต่คลาสได้เร็ว</p>`,
+  callout:'ลองเปลี่ยน half-life เป็น "16 tokens (เร่งเพื่อสาธิต)" แล้วดูแสง CRF หรี่ลงเร็วขึ้น ของจริงครึ่งชีวิต 128 tokens',
+  enter(){ cacheEnabled=true; labelsOn=true; ringsOn=true; syncToggles(); $('timebar').classList.remove('hide'); }
+},
+{
+  cam:'cpulane', title:'ให้ CPU ช่วย: --moe-cache-cpu-share',
+  body:`<p>บางเครื่อง <span class="c-amber">CPU อ่าน RAM ได้เร็วกว่า GPU อัปโหลดข้าม PCIe</span> เสียอีก (โดยเฉพาะตอน expert ไม่ได้ pinned หรือใช้ mmap) v1.0.0 เลยเพิ่ม <code class="chip">--moe-cache-cpu-share F</code> เช่น 0.95</p>
+  <p>พอ cache เต็ม: <b>miss ที่ CRF ต่ำสุด (ตัวที่นาน ๆ ใช้ที)</b> จะถูกส่งให้ CPU คำนวณจาก RAM <span class="c-amber">ไปพร้อม ๆ กัน</span> กับที่ GPU ทำ hit และอัปโหลด miss ตัวอื่น ตัวที่เริ่มกลับมาฮิตจึงได้อัปโหลดเข้า cache เร็วขึ้น (PR #31853)</p>
+  <p>จุดสำคัญ: CPU <b>ไม่ต้องนั่งรอ GPU</b> (แก้ใน PR #31888) เวลาต่อ token จึงเป็น <span class="c-green">max(GPU, CPU)</span> ไม่ใช่เอาไปบวกกัน ดูแถบสองเลนวิ่งขนานกันแล้ว t/s กระโดดขึ้น</p>`,
+  callout:'ลองเลื่อน cpu-share ไปมา 0 ↔ 0.95 แล้วเทียบแถบเวลา ถ้า CPU อ่าน RAM ช้ากว่า PCIe ตั้ง share สูงอาจกลับทำให้ช้าลง ต้องจูนหาจุดพอดี!',
+  enter(){ cacheEnabled=true; if(cfg.cpuShare===0){ cfg.cpuShare=0.9; $('cShare').value=0.9; $('vShare').textContent='0.90'; } $('timebar').classList.remove('hide'); toast('ตั้ง cpu-share = 0.9 ให้เห็นผล — ลองเลื่อนเองได้'); }
+},
+{
+  cam:'summary', title:'ใช้งานจริง + จูนอัตโนมัติ',
+  body:`<p>คำสั่งแบบเต็ม ๆ:</p>
+  <div class="formula">llama-server -m model.gguf -ngl 99 <em>-cmoe</em><br>&nbsp;&nbsp;<em>--moe-cache-mib 24000 --moe-cache-cpu-share 0</em></div>
+  <p>ไม่รู้จะตั้งเท่าไหร่? ใช้สคริปต์จูนที่แถมมาได้เลย มันจะลอง 6 ค่า (2 ขนาด × 3 share) แล้วจำลอง routing ซ้ำเพื่อแนะนำค่าที่ดีที่สุด:</p>
+  <div class="formula">python3 scripts/moe-cache-tune.py -- llama-server -m model.gguf -cmoe -t 8</div>
+  <table class="bench"><tr><th>cache</th><th>share</th><th class="num">t/s</th><th class="num">hit</th></tr>
+  <tr><td>6464 MiB</td><td>0</td><td class="num">24.2</td><td class="num">73.3%</td></tr>
+  <tr><td>6464 MiB</td><td>0.95</td><td class="num">47.6</td><td class="num">61.5%</td></tr>
+  <tr><td>19392 MiB</td><td>0</td><td class="num">65.5</td><td class="num">93.5%</td></tr>
+  <tr class="hl"><td>24000 MiB</td><td>0</td><td class="num">83.0 ★</td><td class="num">—</td></tr></table>
+  <p style="font-size:11.5px;color:var(--muted)">ตัวเลขจริงจาก PR #30966 · Qwen3.8-Flash-Next IQ4_NL · ★ = ค่าที่สคริปต์แนะนำ</p>
+  <p><b>ข้อควรจำ:</b> ช่วง prefill (batch ใหญ่) ไม่ใช้ cache แต่อัปโหลดตรง · ไม่ใช้กับ draft model ของ speculative decoding · ต้องมี GPU backend · ClassLRU ให้ hit ดีกว่า SLRU เดิม ~1% และ decode เร็วขึ้น 6–7% (PR #31233)</p>`,
+  callout:'ครบแล้ว! กลับไปทบทวนบทไหนก็ได้ หรือลองห้องแล็บ: เพิ่ม cache เปลี่ยน top-k สุ่ม routing แล้วดู hit rate เปลี่ยนยังไง',
+  enter(){ cacheEnabled=true; $('timebar').classList.remove('hide'); }
+},
+];
+
+/* ---------- chapter 1 intro flight ---------- */
+function startIntroFly(){
+  introFly={ t:0, dur:2.6 };
+  expertMeshes.forEach((m,i)=>{
+    m.userData.flyFrom=new THREE.Vector3(GPU_X+(Math.random()-0.5)*10, 4+Math.random()*6, (Math.random()-0.5)*8);
+    m.userData.flyDelay=(i/expertMeshes.length)*1.2;
+    m.position.copy(m.userData.flyFrom);
+    m.material.emissive.setHex(C.red); m.material.emissiveIntensity=0.9;
+  });
+}
+function updateIntroFly(dt){
+  if(!introFly) return;
+  introFly.t+=dt;
+  let allDone=true;
+  expertMeshes.forEach((m,i)=>{
+    const k=clamp((introFly.t-m.userData.flyDelay)/1.2,0,1);
+    if(k<1) allDone=false;
+    const e=easeIO(k);
+    m.position.lerpVectors(m.userData.flyFrom,m.userData.home,e);
+    m.position.y+=Math.sin(e*Math.PI)*2.5;
+    m.material.emissive.lerpColors(new THREE.Color(C.red),expertBaseColors[i],e);
+    m.material.emissiveIntensity=lerp(0.9,0.16,e)*glowMul;
+  });
+  vramBox.material.opacity=0.85*(1-clamp(introFly.t/introFly.dur,0,1)*0.4);
+  if(allDone && introFly.t>introFly.dur){ introFly=null; vramBox.visible=false; vramLabelEl.style.display='none'; }
+}
+
+/* ---------- chapter navigation ---------- */
+function resetSim(showToast=true){
+  sim.reset(); tokenActor=null;
+  for(const fx of effects) scene.remove(fx.obj);
+  effects.length=0;
+  syncCacheVisuals(); updateHUD();
+  if(showToast) toast('รีเซ็ตการจำลองแล้ว');
+}
+function renderChapter(){
+  const ch=chapters[chapter];
+  $('chEyebrow').textContent=`บทที่ ${chapter+1} / ${chapters.length}`;
+  $('chTitle').innerHTML=`<span class="no">${chapter+1}</span>${ch.title}`;
+  $('chBody').innerHTML=ch.body+`<div class="callout"><div class="t">จุดสำคัญ</div>${ch.callout}</div>`;
+  for(const el of [$('chTitle'),$('chBody')]){ el.classList.remove('chreveal'); void el.offsetWidth; el.classList.add('chreveal'); }
+  $('stepLabel').textContent=`บทที่ ${chapter+1}/${chapters.length}`;
+  $('prevBtn').disabled=chapter===0;
+  $('nextBtn').disabled=chapter===chapters.length-1;
+  [...$('dots').children].forEach((d,i)=>d.classList.toggle('on',i===chapter));
+}
+function goChapter(i, silent=false){
+  chapter=clamp(i,0,chapters.length-1);
+  const ch=chapters[chapter];
+  renderChapter(); flyTo(ch.cam);
+  ch.enter();
+  syncCacheVisuals();
+  if(!silent){ SFX.chapter(); if(!playing) setPlaying(true); }
+  tourT=0;
+}
+chapters.forEach((_,i)=>{ const d=document.createElement('button'); d.className='dot'; d.title='บทที่ '+(i+1); d.onclick=()=>goChapter(i); $('dots').appendChild(d); });
+$('prevBtn').onclick=()=>goChapter(chapter-1);
+$('nextBtn').onclick=()=>goChapter(chapter+1);
+
+/* ============================================================
+   lab controls
+============================================================ */
+function rebuildAll(){
+  if(cfg.topK>cfg.nSlots){ cfg.nSlots=Math.ceil(cfg.topK/4)*4; $('cSlots').value=cfg.nSlots; $('vSlots').textContent=cfg.nSlots; toast('ขยาย cache ให้พอสำหรับ top-k อัตโนมัติ'); }
+  buildExpertWall(cfg.nExperts); buildCacheSlots(cfg.nSlots);
+  resetSim(false);
+  if(chapter===0) startIntroFly();
+}
+$('cSlots').oninput=e=>{ cfg.nSlots=+e.target.value; $('vSlots').textContent=cfg.nSlots; rebuildAll(); };
+$('cExperts').onchange=e=>{ cfg.nExperts=+e.target.value; $('vExperts').textContent=cfg.nExperts; rebuildAll(); };
+$('cTopk').oninput=e=>{ cfg.topK=+e.target.value; $('vTopk').textContent=cfg.topK; rebuildAll(); };
+$('cShare').oninput=e=>{ cfg.cpuShare=+e.target.value; $('vShare').textContent=cfg.cpuShare.toFixed(2); };
+$('cSkew').oninput=e=>{ cfg.skew=+e.target.value; $('vSkew').textContent=cfg.skew.toFixed(2); sim.rebuildWeights(); };
+$('cHalf').onchange=e=>{ cfg.halfLife=+e.target.value; toast(cfg.halfLife===128?'half-life = 128 tokens (ค่าจริง)':'เร่งการสลายตัวเพื่อสาธิต'); };
+$('cGlow').oninput=e=>{ glowMul=+e.target.value; $('vGlow').textContent=glowMul.toFixed(1); if(bloomPass) bloomPass.strength=0.22+glowMul*0.22; };
+function syncToggles(){
+  $('tLabels').classList.toggle('on',labelsOn);
+  $('tRings').classList.toggle('on',ringsOn);
+  $('tRotate').classList.toggle('on',wantAutoRotate);
+}
+$('tLabels').onclick=()=>{ labelsOn=!labelsOn; syncToggles(); syncCacheVisuals(); };
+$('tRings').onclick=()=>{ ringsOn=!ringsOn; syncToggles(); syncCacheVisuals(); };
+$('tRotate').onclick=()=>{ wantAutoRotate=!wantAutoRotate; syncToggles(); };
+$('cCam').onchange=e=>flyTo(e.target.value);
+$('viewResetBtn').onclick=()=>{ flyTo('overview'); $('cCam').value='overview'; };
+$('bReset').onclick=()=>{ resetSim(); if(chapter===0) startIntroFly(); };
+$('bSeed').onclick=()=>{ sim.seed=Math.floor(Math.random()*1e9); resetSim(false); toast('สุ่มรูปแบบ routing ใหม่แล้ว'); };
+$('bExport').onclick=()=>{
+  renderFrame();
+  const a=document.createElement('a'); a.download=`expert-cache-ch${chapter+1}.png`;
+  a.href=renderer.domElement.toDataURL('image/png'); a.click();
+  toast('บันทึกภาพ PNG แล้ว');
+};
+$('speed').oninput=e=>{ speed=+e.target.value; $('speedVal').textContent=speed.toFixed(2)+'×'; };
+$('soundBtn').onclick=()=>{ SFX.ensure(); SFX.setMuted(!SFX.muted); $('soundIc').textContent=SFX.muted?'🔇':'🔊'; $('soundTxt').textContent=SFX.muted?'เสียงปิด':'เสียงเปิด'; $('soundBtn').classList.toggle('off',SFX.muted); };
+$('tourBtn').onclick=()=>{ tourOn=!tourOn; $('tourBtn').classList.toggle('on',tourOn); tourT=0; if(tourOn&&!playing) setPlaying(true); };
+
+/* ---------- playback ---------- */
+function setPlaying(v){ playing=v; $('playBtn').textContent=v?'⏸':'▶'; }
+$('playBtn').onclick=()=>{ SFX.ensure(); setPlaying(!playing); };
+$('startBtn').onclick=()=>{ SFX.ensure(); $('intro').classList.add('gone'); setPlaying(true); goChapter(0,true); };
+window.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+  if(e.code==='Space'){ e.preventDefault(); SFX.ensure(); setPlaying(!playing); $('intro').classList.add('gone'); }
+  if(e.key==='ArrowRight') goChapter(chapter+1);
+  if(e.key==='ArrowLeft') goChapter(chapter-1);
+});
+
+/* ============================================================
+   resize & main loop
+============================================================ */
+function resize(){
+  const w=stage.clientWidth, h=stage.clientHeight;
+  renderer.setSize(w,h,false);
+  if(composer){ composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w,h); }
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+resize();
+
+const clock=new THREE.Clock();
+const tmpV=new THREE.Vector3();
+let labelThrottle=0;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),0.05);
+  const t=clock.elapsedTime;
+
+  // camera tween
+  if(camTween){
+    camTween.t+=dt;
+    const k=easeIO(clamp(camTween.t/camTween.dur,0,1));
+    camera.position.lerpVectors(camTween.fp,camTween.tp,k);
+    controls.target.lerpVectors(camTween.ft,camTween.tt,k);
+    if(camTween.t>=camTween.dur){ camTween=null; controls.enabled=true; }
+  }
+  controls.autoRotate = wantAutoRotate && !camTween;
+  controls.update();
+
+  // ambient life
+  routerCore.rotation.y+=dt*0.8; routerRing.rotation.z+=dt*0.5;
+  routerCore.material.emissiveIntensity=lerp(routerCore.material.emissiveIntensity,1.4*glowMul,dt*4);
+  outRing.rotation.z+=dt*0.6;
+  attnBox.material.emissiveIntensity=(0.6+Math.sin(t*1.3)*0.15)*glowMul;
+  cpuPulse=Math.max(0,cpuPulse-dt*2);
+  cpuBox.material.emissiveIntensity=(0.7+cpuPulse*2.2)*glowMul;
+  bridgeActivity=Math.max(0,bridgeActivity-dt*1.5);
+  chevTx.offset.x-=dt*(0.15+bridgeActivity*1.4);
+  chevPlane.material.opacity=0.45+bridgeActivity*0.5;
+  world.children.forEach(o=>{ if(o.userData.drift){ o.rotation.y+=dt*0.012; o.position.y=Math.sin(t*0.2)*0.4; } });
+  keyGpu.intensity=130*(0.92+Math.sin(t*0.9)*0.08);
+  keyRam.intensity=115*(0.92+Math.cos(t*0.7)*0.08);
+
+  updateIntroFly(dt);
+
+  // token pipeline
+  if(playing && !introFly && chapter>=1){
+    if(tokenActor){
+      if(!tokenActor.update(dt)) tokenActor=null;
+    } else {
+      spawnCooldown-=dt;
+      if(spawnCooldown<=0){
+        const r=sim.step(cacheEnabled);
+        tokenActor=new TokenActor(r);
+        spawnCooldown=0.12/speed;
+        syncCacheVisuals();
+      }
+    }
+  } else if(tokenActor){
+    if(!tokenActor.update(dt)) tokenActor=null;
+  }
+
+  // effects
+  for(let i=effects.length-1;i>=0;i--){
+    const fx=effects[i]; fx.age+=dt;
+    const k=clamp(fx.age/fx.ttl,0,1);
+    fx.update(fx.obj,k,dt);
+    if(k>=1){ scene.remove(fx.obj); disposeTree(fx.obj); effects.splice(i,1); }
+  }
+  // cube pops & flashes & expert decay
+  for(const cube of slotCubes){
+    if(cube.userData.pop!==undefined && cube.userData.pop<1){ cube.userData.pop=Math.min(1,cube.userData.pop+dt*4); cube.scale.setScalar(0.01+easeOut(cube.userData.pop)*0.99); }
+    if(cube.userData.flash>0){ cube.userData.flash=Math.max(0,cube.userData.flash-dt*2.5); cube.material.emissiveIntensity=glowMul*(0.6+cube.userData.flash*2.0); }
+  }
+  for(const m of expertMeshes){ if(!introFly) m.material.emissiveIntensity=lerp(m.material.emissiveIntensity,0.16*glowMul,dt*3); }
+
+  // labels projection (throttled)
+  labelThrottle-=dt;
+  if(labelThrottle<=0){
+    labelThrottle=0.03;
+    const w=stage.clientWidth,h=stage.clientHeight;
+    for(const L of worldLabels){
+      tmpV.copy(L.pos).project(camera);
+      if(tmpV.z>1||tmpV.z<-1||!labelsOn){ L.el.style.opacity=0; continue; }
+      L.el.style.opacity=1;
+      L.el.style.left=((tmpV.x*0.5+0.5)*w)+'px';
+      L.el.style.top=((-tmpV.y*0.5+0.5)*h)+'px';
+    }
+  }
+
+  // auto tour
+  if(tourOn && playing){
+    tourT+=dt;
+    $('tourProg').style.width=(tourT/TOUR_SEC*100)+'%';
+    if(tourT>=TOUR_SEC){ if(chapter<chapters.length-1) goChapter(chapter+1); else { tourOn=false; $('tourBtn').classList.remove('on'); $('tourProg').style.width='0%'; } }
+  } else $('tourProg').style.width='0%';
+
+  renderFrame();
+}
+
+/* ---------- boot ---------- */
+renderChapter();
+chapters[0].enter();
+syncCacheVisuals();
+updateHUD();
+syncToggles();
+setPlaying(false);
+animate();
+</script>
+</body>
+</html>

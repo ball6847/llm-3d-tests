@@ -25,6 +25,7 @@ also the thumbnail prefix and the `?v=` value in the URL.
 |---|---|---|
 | `aurora-torus` | Aurora torus | `collections/aurora-torus/` |
 | `aurora-torus-with-control` | Aurora torus with control | `collections/aurora-torus-with-control/` |
+| `llamacpp-expert-cache-viz` | llama.cpp expert cache | `collections/llamacpp-expert-cache-viz/` |
 
 To add a collection, add an entry to `collections.js`, create the folder, add
 the prompt string to `prompts.js`, then run the sync.

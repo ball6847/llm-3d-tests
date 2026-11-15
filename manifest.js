@@ -92,6 +92,12 @@ var BENCH_MANIFEST = {
       "slug": "tiel-coder-q3",
       "bytes": 32730
     }
+  ],
+  "llamacpp-expert-cache-viz": [
+    {
+      "slug": "qwen4-max-preview",
+      "bytes": 85498
+    }
   ]
 };
 if (typeof window !== "undefined") window.MANIFEST = BENCH_MANIFEST;
