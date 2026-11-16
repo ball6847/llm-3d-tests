@@ -22,7 +22,7 @@ each owns a folder under `collections/` named after its slug.
 
 | slug | label | folder | models |
 |---|---|---|---|
-| `aurora-torus` | Aurora torus | `collections/aurora-torus/` | 17 |
+| `aurora-torus` | Aurora torus | `collections/aurora-torus/` | 18 |
 | `aurora-torus-with-control` | Aurora torus with control | `collections/aurora-torus-with-control/` | 5 |
 | `llamacpp-expert-cache-viz` | llama.cpp expert cache | `collections/llamacpp-expert-cache-viz/` | 1 |
 
@@ -77,8 +77,12 @@ One difference between the two modes, on purpose:
 
 Both are plain JSON-quoted string literals, so backticks, quotes, and newlines
 inside a prompt need no manual escaping. To edit one, change the text between
-the quotes and keep the quotes. The index page reads these two constants and
+the quotes and keep the quotes. The index page reads these constants and
 nothing else needs to change.
+
+The `aurora-torus` prompt was revised after the first 17 runs: the camera now
+orbits by dragging instead of following the pointer, and the wheel zooms.
+Only `qwen-3.8-27b-q3` was run against the revised text.
 
 ## Adding a new collection
 
@@ -134,7 +138,7 @@ llm-3d-tests/
     capture-thumbs.mjs   re-capture every thumbnail
   .agents/skills/sync-bench/   the sync skill (SKILL.md)
   collections/
-    aurora-torus/               17 raw model HTML files
+    aurora-torus/               18 raw model HTML files
     aurora-torus-with-control/   5 raw model HTML files
     llamacpp-expert-cache-viz/   1 raw model HTML file
 ```
@@ -148,7 +152,7 @@ edit it by hand; change the files and re-run the sync.
 Real screenshots, not live iframes. Each scene is loaded in headless Chrome
 (Playwright driving the system Chrome), waited for its canvas and loading
 overlay, given a few seconds to settle, and captured at 960x540 to
-`thumbs/<variant>-<model>.png`. All 22 current results have a thumbnail. Cards
+`thumbs/<variant>-<model>.png`. All 24 current results have a thumbnail. Cards
 load these lazily; if a PNG is ever missing, the card falls back to a
 "No preview" tile.
 

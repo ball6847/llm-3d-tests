@@ -55,6 +55,10 @@ var BENCH_MANIFEST = {
       "bytes": 17555
     },
     {
+      "slug": "qwen-3.8-27b-q3",
+      "bytes": 14592
+    },
+    {
       "slug": "qwen4-max-preview-qoduck",
       "bytes": 48715
     },
