@@ -70,12 +70,12 @@ One difference between the two modes, on purpose:
 
 - `PROMPT_AURORA_TORUS` is the brief given to every model in
   `collections/aurora-torus/`.
-- `PROMPT_AURORA_TORUS_WITH_CONTROL` is the brief given to every model in
+- `PROMPT_AURORA_TORUS_WITH_CONTROL` is the brief for
   `collections/aurora-torus-with-control/`.
 - `PROMPT_LLAMACPP_EXPERT_CACHE_VIZ` is the brief given to every model in
   `collections/llamacpp-expert-cache-viz/`.
 
-Both are plain JSON-quoted string literals, so backticks, quotes, and newlines
+They are plain JSON-quoted string literals, so backticks, quotes, and newlines
 inside a prompt need no manual escaping. To edit one, change the text between
 the quotes and keep the quotes. The index page reads these constants and
 nothing else needs to change.
@@ -83,6 +83,10 @@ nothing else needs to change.
 The `aurora-torus` prompt was revised after the first 17 runs: the camera now
 orbits by dragging instead of following the pointer, and the wheel zooms.
 Only `qwen-3.8-27b-q3` was run against the revised text.
+
+The `aurora-torus-with-control` prompt was revised the same way: orbit by
+dragging, wheel zooms. The 5 results in that collection predate the revision,
+so none of them answers the current text yet.
 
 ## Adding a new collection
 
