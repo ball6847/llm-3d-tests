@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aurora Knot</title>
+<style>
+  :root {
+    --bg: #04060b;
+    --panel: rgba(7, 11, 18, 0.62);
+    --panel-edge: rgba(102, 231, 199, 0.16);
+    --text: #d8e6e4;
+    --dim: #7d938f;
+    --accent: #66e7c7;
+    --accent-2: #8f7bff;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+  }
+
+  #stage {
+    position: fixed;
+    inset: 0;
+    touch-action: none; /* drag to orbit must not become a scroll gesture */
+    cursor: grab;
+  }
+  #stage.dragging { cursor: grabbing; }
+  #stage canvas { display: block; }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(2, 4, 8, 0.6) 100%);
+  }
+
+  /* ---------- panels ---------- */
+
+  .panel {
+    position: fixed;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 10px;
+    backdrop-filter: blur(10px) saturate(1.25);
+    -webkit-backdrop-filter: blur(10px) saturate(1.25);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    user-select: none;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 0.5s ease 0.1s, transform 0.5s ease 0.1s;
+  }
+  body.ready .panel { opacity: 1; transform: none; }
+
+  .panel h2 {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+    padding: 10px 12px 6px;
+  }
+
+  .title-card { top: 16px; left: 16px; padding: 12px 14px; max-width: 240px; }
+  .title-card h1 {
+    font-size: 17px;
+    font-weight: 650;
+    letter-spacing: 0.01em;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .title-card p { margin-top: 4px; color: var(--dim); font-size: 12px; line-height: 1.4; }
+
+  .ui-right {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    width: 232px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    opacity: 0;
+    transition: opacity 0.5s ease 0.15s;
+  }
+  body.ready .ui-right { opacity: 1; }
+  .ui-right .panel { position: static; }
+
+  .telemetry dl { padding: 4px 12px 10px; display: grid; grid-template-columns: 1fr auto; row-gap: 3px; }
+  .telemetry dt {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--dim);
+    align-self: center;
+  }
+  .telemetry dd { font-family: var(--mono); font-size: 12px; color: var(--accent); text-align: right; }
+
+  .controls .body { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+
+  .ctl { display: flex; flex-direction: column; gap: 4px; }
+  .ctl .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ctl label { font-size: 12px; }
+  .ctl output { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    background: transparent;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, rgba(102, 231, 199, 0.55), rgba(143, 123, 255, 0.55));
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 13px;
+    height: 13px;
+    margin-top: -5px;
+    border-radius: 50%;
+    background: #eafff8;
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 8px rgba(102, 231, 199, 0.6);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, rgba(102, 231, 199, 0.55), rgba(143, 123, 255, 0.55));
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #eafff8;
+    border: 1px solid var(--accent);
+  }
+  input[type="range"]:focus-visible,
+  button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .toggles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 7px 4px;
+    font: inherit;
+    font-size: 11px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 7px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .toggle .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #3a4a48;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .toggle[aria-pressed="true"] {
+    border-color: rgba(102, 231, 199, 0.5);
+    background: rgba(102, 231, 199, 0.08);
+  }
+  .toggle[aria-pressed="true"] .dot {
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+  }
+  .toggle .state { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+  .toggle[aria-pressed="true"] .state { color: var(--accent); }
+
+  .hints {
+    bottom: 16px;
+    left: 16px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--dim);
+  }
+  .hints b { color: var(--text); font-weight: 550; }
+
+  .chip {
+    position: fixed;
+    z-index: 5;
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 999px;
+    padding: 7px 14px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    opacity: 0;
+    transition: opacity 0.4s ease 0.2s;
+  }
+  body.ready .chip { opacity: 1; }
+  #hide-ui { bottom: 16px; right: 16px; }
+  #show-ui {
+    bottom: 16px;
+    right: 16px;
+    display: none;
+  }
+  body.ui-hidden .panel,
+  body.ui-hidden .ui-right,
+  body.ui-hidden #hide-ui,
+  body.ui-hidden .sheet-toggle { display: none; }
+  body.ui-hidden #show-ui { display: block; }
+
+  .sheet-toggle {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    display: none;
+    z-index: 6;
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 999px;
+    padding: 8px 14px;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+  }
+
+  /* ---------- phone ---------- */
+
+  @media (max-width: 640px) {
+    .title-card { top: 12px; left: 12px; max-width: 190px; padding: 10px 12px; }
+    .title-card h1 { font-size: 15px; }
+    .title-card p { font-size: 11px; }
+
+    .ui-right {
+      top: auto;
+      bottom: 12px;
+      left: 12px;
+      right: 12px;
+      width: auto;
+      transform: translateY(calc(100% + 24px));
+      transition: transform 0.35s ease;
+    }
+    body.ready .ui-right { opacity: 1; }
+    body.sheet-open .ui-right { transform: translateY(0); }
+    .ui-right .panel { flex: 0 0 auto; max-height: 42vh; overflow-y: auto; }
+    .ui-right .controls .body { padding-bottom: 48px; /* keep the last row clear of the Close button */ }
+    .hints { display: none; }
+    .sheet-toggle { display: block; }
+    /* keep the hide chip out of the sheet-toggle's corner */
+    #hide-ui, #show-ui { top: 12px; right: 12px; bottom: auto; padding: 6px 12px; }
+  }
+
+  /* ---------- loader / failure ---------- */
+
+  #loader {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    transition: opacity 0.6s ease;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  .loader-inner { width: min(300px, 80vw); text-align: center; }
+  .loader-title {
+    font-size: 18px;
+    font-weight: 650;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    margin-bottom: 14px;
+  }
+  .loader-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .loader-fill {
+    height: 100%;
+    width: 5%;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width 0.4s ease;
+  }
+  .loader-label { margin-top: 10px; font-size: 12px; color: var(--dim); font-family: var(--mono); }
+
+  #failure {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(4, 6, 11, 0.92);
+    padding: 20px;
+  }
+  #failure[hidden] { display: none; }
+  .fail-box {
+    max-width: 420px;
+    background: var(--panel);
+    border: 1px solid rgba(255, 120, 120, 0.35);
+    border-radius: 10px;
+    padding: 18px 20px;
+    text-align: center;
+  }
+  .fail-title { font-size: 15px; font-weight: 650; color: #ff9d9d; margin-bottom: 8px; }
+  .fail-msg { font-family: var(--mono); font-size: 12px; color: var(--text); line-height: 1.5; word-break: break-word; }
+  .fail-hint { margin-top: 10px; font-size: 12px; color: var(--dim); }
+</style>
+
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+</script>
+</head>
+<body>
+
+  <div id="stage" aria-label="3D scene: drag to orbit, scroll to zoom"></div>
+  <div class="vignette"></div>
+
+  <header class="panel title-card">
+    <h1>Aurora Knot</h1>
+    <p>Procedural three.js scene. A torus knot with a hand-written shader, wrapped in 3,500 orbiting particles.</p>
+  </header>
+
+  <div class="ui-right">
+    <section class="panel telemetry" aria-label="Live telemetry">
+      <h2>Telemetry</h2>
+      <dl>
+        <dt>fps</dt><dd id="t-fps">-</dd>
+        <dt>frame</dt><dd id="t-ms">-</dd>
+        <dt>points</dt><dd id="t-pts">-</dd>
+        <dt>camera</dt><dd id="t-cam">-</dd>
+        <dt>heading</dt><dd id="t-head">-</dd>
+      </dl>
+    </section>
+
+    <section class="panel controls" id="controls-panel" aria-label="Scene controls">
+      <h2>Controls</h2>
+      <div class="body">
+        <div class="ctl">
+          <div class="row"><label for="c-bloom-strength">Bloom strength</label><output id="c-bloom-strength-val">1.15</output></div>
+          <input type="range" id="c-bloom-strength" min="0" max="3" step="0.05" value="1.15">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="c-bloom-threshold">Bloom threshold</label><output id="c-bloom-threshold-val">0.55</output></div>
+          <input type="range" id="c-bloom-threshold" min="0" max="1" step="0.05" value="0.55">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="c-particle-speed">Particle speed</label><output id="c-particle-speed-val">1.00</output></div>
+          <input type="range" id="c-particle-speed" min="0" max="3" step="0.05" value="1">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="c-hue">Hue shift</label><output id="c-hue-val">0&deg;</output></div>
+          <input type="range" id="c-hue" min="0" max="360" step="1" value="0">
+        </div>
+        <div class="ctl">
+          <div class="row"><label for="c-drag">Drag feel</label><output id="c-drag-val">1.00</output></div>
+          <input type="range" id="c-drag" min="0.2" max="3" step="0.05" value="1">
+        </div>
+
+        <div class="toggles">
+          <button class="toggle" id="t-bloom" aria-pressed="true">
+            <span class="dot" aria-hidden="true"></span>Bloom<span class="state">on</span>
+          </button>
+          <button class="toggle" id="t-particles" aria-pressed="true">
+            <span class="dot" aria-hidden="true"></span>Particles<span class="state">on</span>
+          </button>
+          <button class="toggle" id="t-pause" aria-pressed="false">
+            <span class="dot" aria-hidden="true"></span>Pause<span class="state">off</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="panel hints">
+    <b>Drag</b> to orbit &middot; <b>Scroll</b> to zoom &middot; <b>H</b> hides this interface
+  </footer>
+
+  <button class="chip" id="hide-ui">Hide interface</button>
+  <button class="chip" id="show-ui">Show interface</button>
+  <button class="sheet-toggle" id="sheet-toggle" aria-expanded="false" aria-controls="controls-panel">Controls</button>
+
+  <div id="loader">
+    <div class="loader-inner">
+      <div class="loader-title">Aurora Knot</div>
+      <div class="loader-bar"><div class="loader-fill" id="loader-fill"></div></div>
+      <div class="loader-label" id="loader-label">waking up</div>
+    </div>
+  </div>
+
+  <div id="failure" hidden>
+    <div class="fail-box">
+      <div class="fail-title">Scene failed to start</div>
+      <p class="fail-msg" id="fail-msg"></p>
+      <p class="fail-hint">Check the connection and reload, or open this page in a browser with WebGL enabled.</p>
+    </div>
+  </div>
+
+  <script type="module">
+    // Startup runs as a module so a CDN failure rejects a promise instead of
+    // leaving the loader spinning. The watchdog catches the case where the
+    // module itself never runs (network cut before the import map resolves).
+    window.__errors = [];
+    window.addEventListener('error', (e) => window.__errors.push(String(e.message || e.error || 'unknown error')));
+
+    const $ = (s) => document.querySelector(s);
+    const loaderEl = $('#loader');
+    const loaderFill = $('#loader-fill');
+    const loaderLabel = $('#loader-label');
+
+    function setProgress(pct, label) {
+      loaderFill.style.width = pct + '%';
+      loaderLabel.textContent = label;
+    }
+
+    function fail(msg) {
+      $('#fail-msg').textContent = msg;
+      $('#failure').hidden = false;
+      loaderEl.remove();
+    }
+
+    const watchdog = setTimeout(() => {
+      if (!window.__aurora?.firstFrame) {
+        fail('The scene never produced a first frame. The Three.js CDN may be unreachable, or WebGL is unavailable in this browser.');
+      }
+    }, 15000);
+
+    let firstFrame = false;
+    window.__aurora = { get firstFrame() { return firstFrame; } };
+
+    try {
+      setProgress(10, 'fetching three.js from CDN');
+      const THREE = await import('three');
+      const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
+      const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js');
+      const { UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js');
+      const { OutputPass } = await import('three/addons/postprocessing/OutputPass.js');
+      setProgress(35, 'building scene');
+
+      // ---------- renderer ----------
+
+      // Probe first so a missing WebGL context gets a specific message.
+      const probe = document.createElement('canvas');
+      if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) {
+        throw new Error('WebGL is not available in this browser.');
+      }
+
+      const stage = $('#stage');
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      // DPR cap: a 3x phone would otherwise push 9x the pixels through bloom.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+      stage.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x04060b);
+
+      const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 100);
+
+      // ---------- hero: torus knot with a custom shader ----------
+
+      const heroGeo = new THREE.TorusKnotGeometry(1.05, 0.34, 260, 40);
+
+      const heroUniforms = {
+        uTime: { value: 0 },
+        uHue: { value: 0 }, // in turns, so 1.0 = full palette rotation
+      };
+
+      // View-space normals and view direction: the fresnel term (grazing
+      // angle brightness) is what sells the folded-light look, and it needs
+      // both in the same space.
+      const heroMat = new THREE.ShaderMaterial({
+        uniforms: heroUniforms,
+        vertexShader: /* glsl */`
+          varying vec3 vNormal;
+          varying vec3 vView;
+          varying vec3 vPos;
+
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            vPos = position;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            vView = -mv.xyz;
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          uniform float uTime;
+          uniform float uHue;
+          varying vec3 vNormal;
+          varying vec3 vView;
+          varying vec3 vPos;
+
+          // Cosine palette (Inigo Quilez). Teal to green to violet to magenta.
+          vec3 aurora(float t) {
+            return vec3(0.30, 0.36, 0.46)
+                 + vec3(0.42, 0.46, 0.46) * cos(6.28318 * (t + vec3(0.14, 0.42, 0.72)));
+          }
+
+          void main() {
+            vec3 N = normalize(vNormal);
+            vec3 V = normalize(vView);
+            float ndv = clamp(dot(N, V), 0.0, 1.0);
+            float rim = pow(1.0 - ndv, 2.5);
+
+            // Hue travels with surface angle, height, time, and viewing angle.
+            // The rim term is what makes it read as thin-film iridescence:
+            // the same patch of surface shifts color as you orbit it.
+            float ang = atan(vPos.z, vPos.x);
+            float h = uHue
+                    + uTime * 0.04
+                    + 0.16 * ang
+                    + 0.20 * (vPos.y * 0.5 + 0.5)
+                    + rim * 0.45;
+
+            vec3 col = aurora(h);
+
+            vec3 L = normalize(vec3(0.5, 0.9, 0.35));
+            float diff = clamp(dot(N, L), 0.0, 1.0);
+            float spec = pow(clamp(dot(reflect(-L, N), V), 0.0, 1.0), 24.0);
+
+            // Drifting bands. The smoothstep window keeps most of the surface
+            // under the bloom threshold so only the crests glow.
+            float band = 0.5 + 0.5 * sin(ang * 2.0 + vPos.y * 3.0 - uTime * 0.9);
+            band = smoothstep(0.86, 1.0, band);
+
+            vec3 rimCol = mix(vec3(0.30, 1.00, 0.85), vec3(0.70, 0.40, 1.00),
+                              0.5 + 0.5 * sin(uTime * 0.4 + h * 6.28318));
+
+            // Base stays dim; only band crests and the rim cross the bloom
+            // threshold, so the glow reads as light folding over the surface.
+            vec3 outc = col * (0.10 + 0.38 * diff);
+            outc += col * band * 1.15;
+            outc += vec3(1.0) * spec * 0.5;
+            outc += rimCol * rim * 1.5;
+
+            gl_FragColor = vec4(outc, 1.0);
+          }
+        `,
+      });
+
+      const hero = new THREE.Mesh(heroGeo, heroMat);
+      scene.add(hero);
+
+      // ---------- particles: one BufferGeometry, orbit math in the vertex shader ----------
+
+      const COUNT = 3500;
+      const pGeo = new THREE.BufferGeometry();
+
+      // Position attribute exists only to fix the draw count; real positions
+      // are computed per frame on the GPU.
+      pGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3));
+
+      // Per particle: phase, angular speed, orbit radius, point size.
+      const seed = new Float32Array(COUNT * 4);
+      const aU = new Float32Array(COUNT * 3);
+      const aV = new Float32Array(COUNT * 3);
+      const aHue = new Float32Array(COUNT);
+
+      const axis = new THREE.Vector3();
+      const u = new THREE.Vector3();
+      const v = new THREE.Vector3();
+      const tmp = new THREE.Vector3(1, 0, 0);
+
+      for (let i = 0; i < COUNT; i++) {
+        // Bias radii toward the knot, tail off into a wide halo.
+        const r = 1.9 + Math.pow(Math.random(), 1.7) * 7.5;
+        seed[i * 4 + 0] = Math.random() * Math.PI * 2;
+        seed[i * 4 + 1] = 0.05 + Math.random() * 0.25;
+        seed[i * 4 + 2] = r;
+        seed[i * 4 + 3] = Math.random() < 0.03 ? 3 + Math.random() * 1.5 : 1.2 + Math.random() * 2.0;
+
+        // Random orbit plane: a random axis plus an orthonormal basis.
+        axis.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1).normalize();
+        if (Math.abs(axis.x) > 0.9) tmp.set(0, 1, 0); else tmp.set(1, 0, 0);
+        u.crossVectors(axis, tmp).normalize();
+        v.crossVectors(axis, u).normalize();
+        aU.set([u.x, u.y, u.z], i * 3);
+        aV.set([v.x, v.y, v.z], i * 3);
+        aHue[i] = Math.random();
+      }
+
+      pGeo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));
+      pGeo.setAttribute('aU', new THREE.BufferAttribute(aU, 3));
+      pGeo.setAttribute('aV', new THREE.BufferAttribute(aV, 3));
+      pGeo.setAttribute('aHue', new THREE.BufferAttribute(aHue, 1));
+
+      const particleUniforms = {
+        uTime: { value: 0 },
+        uSpeed: { value: 1 },
+        uHue: { value: 0 },
+        uPixelRatio: { value: renderer.getPixelRatio() },
+      };
+
+      const particleMat = new THREE.ShaderMaterial({
+        uniforms: particleUniforms,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: /* glsl */`
+          attribute vec4 aSeed; // phase, angular speed, radius, size
+          attribute vec3 aU;
+          attribute vec3 aV;
+          attribute float aHue;
+          uniform float uTime;
+          uniform float uSpeed;
+          uniform float uHue;
+          uniform float uPixelRatio;
+          varying float vAlpha;
+          varying vec3 vColor;
+
+          void main() {
+            float t = aSeed.x + uTime * uSpeed * aSeed.y;
+            vec3 p = aU * cos(t) * aSeed.z + aV * sin(t) * aSeed.z;
+            p.y *= 0.78; // flatten the field slightly for depth
+
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_Position = projectionMatrix * mv;
+
+            float dist = max(-mv.z, 0.001);
+            gl_PointSize = clamp(aSeed.w * uPixelRatio * 10.0 / dist, 1.0, 28.0 * uPixelRatio);
+
+            // Near: big and bright. Far: small and fading into the background.
+            float farFade = 1.0 - smoothstep(4.0, 13.0, dist);
+            float nearGlow = 1.0 + 1.5 * (1.0 - smoothstep(1.0, 4.0, dist));
+            float twinkle = 0.8 + 0.2 * sin(uTime * (1.5 + aSeed.y * 3.0) + aSeed.x * 7.0);
+            vAlpha = clamp(farFade * nearGlow * twinkle, 0.0, 1.0);
+
+            // Three-color mix along the palette; uHue rotates which color
+            // sits where, so the whole field shifts with the hero.
+            float m = fract(aHue + uHue);
+            vec3 cA = vec3(0.30, 0.85, 1.00);
+            vec3 cB = vec3(0.55, 0.40, 1.00);
+            vec3 cC = vec3(0.35, 1.00, 0.70);
+            vColor = m < 0.5 ? mix(cA, cB, m * 2.0) : mix(cB, cC, (m - 0.5) * 2.0);
+          }
+        `,
+        fragmentShader: /* glsl */`
+          varying float vAlpha;
+          varying vec3 vColor;
+
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float mask = smoothstep(0.5, 0.12, d);
+            gl_FragColor = vec4(vColor, mask * vAlpha);
+          }
+        `,
+      });
+
+      const points = new THREE.Points(pGeo, particleMat);
+      scene.add(points);
+
+      // ---------- post processing ----------
+
+      // Half-float target: bloom on 8-bit buffers bands badly in the glow.
+      const drawSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+      const target = new THREE.WebGLRenderTarget(drawSize.x, drawSize.y, {
+        type: THREE.HalfFloatType,
+        samples: 4,
+      });
+      const composer = new EffectComposer(renderer, target);
+      composer.addPass(new RenderPass(scene, camera));
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.15,  // strength
+        0.55,  // radius: tight enough to stay on the object
+        0.55   // threshold: bands and rim sit above this
+      );
+      composer.addPass(bloomPass);
+      composer.addPass(new OutputPass()); // tone map + sRGB at the end
+
+      setProgress(80, 'first frame');
+
+      // ---------- camera control ----------
+
+      const state = {
+        yaw: 0.9, pitch: 0.32, radius: 5.6,
+        targetYaw: 0.9, targetPitch: 0.32, targetRadius: 5.6,
+        sens: 1,
+        paused: false,
+        lastInput: performance.now(),
+        simTime: 0,
+      };
+      window.__aurora.state = state;
+
+      const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      let dragging = false, lastX = 0, lastY = 0;
+
+      stage.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        dragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        stage.classList.add('dragging');
+        state.lastInput = performance.now();
+        try { stage.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
+      });
+
+      window.addEventListener('pointermove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        // Separate sensitivities; vertical is gentler so the view does not
+        // flip over when dragging across the screen.
+        state.targetYaw -= dx * 0.0042 * state.sens;
+        state.targetPitch = clamp(state.targetPitch + dy * 0.0026 * state.sens, -1.25, 1.25);
+        state.lastInput = performance.now();
+      });
+
+      const stopDrag = () => { dragging = false; stage.classList.remove('dragging'); };
+      window.addEventListener('pointerup', stopDrag);
+      window.addEventListener('pointercancel', stopDrag);
+
+      window.addEventListener('wheel', (e) => {
+        e.preventDefault(); // the page must not scroll under the scene
+        state.targetRadius = clamp(state.targetRadius * Math.exp(e.deltaY * 0.0011), 2.3, 11);
+        state.lastInput = performance.now();
+      }, { passive: false });
+
+      // ---------- UI wiring ----------
+
+      function bindSlider(id, fmt, apply) {
+        const el = $(id);
+        const out = $(id + '-val');
+        const update = () => {
+          const val = parseFloat(el.value);
+          out.textContent = fmt(val);
+          apply(val);
+        };
+        el.addEventListener('input', update);
+        update();
+      }
+
+      bindSlider('#c-bloom-strength', (v) => v.toFixed(2), (v) => { bloomPass.strength = v; });
+      bindSlider('#c-bloom-threshold', (v) => v.toFixed(2), (v) => { bloomPass.threshold = v; });
+      bindSlider('#c-particle-speed', (v) => v.toFixed(2), (v) => { particleUniforms.uSpeed.value = v; });
+      bindSlider('#c-hue', (v) => v + '\u00B0', (v) => {
+        const turns = v / 360;
+        heroUniforms.uHue.value = turns;
+        particleUniforms.uHue.value = turns;
+      });
+      bindSlider('#c-drag', (v) => v.toFixed(2), (v) => { state.sens = v; });
+
+      function bindToggle(id, apply) {
+        const el = $(id);
+        el.addEventListener('click', () => {
+          const on = el.getAttribute('aria-pressed') !== 'true';
+          el.setAttribute('aria-pressed', String(on));
+          el.querySelector('.state').textContent = on ? 'on' : 'off';
+          apply(on);
+        });
+      }
+
+      bindToggle('#t-bloom', (on) => { bloomPass.enabled = on; });
+      bindToggle('#t-particles', (on) => { points.visible = on; });
+      bindToggle('#t-pause', (on) => { state.paused = on; });
+
+      const setUIHidden = (hidden) => document.body.classList.toggle('ui-hidden', hidden);
+      $('#hide-ui').addEventListener('click', () => setUIHidden(true));
+      $('#show-ui').addEventListener('click', () => setUIHidden(false));
+
+      const sheetToggle = $('#sheet-toggle');
+      sheetToggle.addEventListener('click', () => {
+        const open = document.body.classList.toggle('sheet-open');
+        sheetToggle.setAttribute('aria-expanded', String(open));
+        sheetToggle.textContent = open ? 'Close' : 'Controls';
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'h' && !e.target.closest('input, textarea, button')) {
+          setUIHidden(!document.body.classList.contains('ui-hidden'));
+        }
+      });
+
+      // ---------- resize ----------
+
+      function onResize() {
+        const w = window.innerWidth, h = window.innerHeight;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(w, h);
+        composer.setSize(w, h);
+        bloomPass.setSize(w, h);
+        particleUniforms.uPixelRatio.value = renderer.getPixelRatio();
+      }
+      window.addEventListener('resize', onResize);
+
+      // ---------- teardown ----------
+
+      let disposed = false;
+      function dispose() {
+        if (disposed) return;
+        disposed = true;
+        cancelAnimationFrame(rafId);
+        heroGeo.dispose();
+        heroMat.dispose();
+        pGeo.dispose();
+        particleMat.dispose();
+        target.dispose();
+        bloomPass.dispose();
+        composer.dispose();
+        renderer.dispose();
+      }
+      window.addEventListener('pagehide', dispose);
+
+      // ---------- main loop ----------
+
+      const tele = {
+        fps: $('#t-fps'), ms: $('#t-ms'), pts: $('#t-pts'), cam: $('#t-cam'), head: $('#t-head'),
+      };
+      tele.pts.textContent = COUNT.toLocaleString();
+
+      const FRAME = 1000 / 60;
+      let rafId = 0;
+      let last = performance.now();
+      let fpsAvg = 60, msAvg = 16.7, teleAcc = 0;
+
+      function loop(now) {
+        rafId = requestAnimationFrame(loop);
+
+        // rAF fires at the display rate (120hz+ on many panels). Skip frames
+        // until ~16.6ms have elapsed so the scene stays at ~60fps.
+        const rawDt = now - last;
+        if (rawDt < FRAME - 1.5) return;
+        last = now - (rawDt % FRAME);
+        const dt = Math.min(rawDt, 100) / 1000;
+
+        if (!state.paused) state.simTime += dt;
+
+        // Idle life: after 3s without input the camera slowly drifts on its own.
+        if (!reducedMotion && !state.paused && now - state.lastInput > 3000) {
+          state.targetYaw += dt * 0.05;
+        }
+
+        // Exponential damping: frame-rate independent, never snaps.
+        const k = 1 - Math.exp(-dt * 7);
+        state.yaw += (state.targetYaw - state.yaw) * k;
+        state.pitch += (state.targetPitch - state.pitch) * k;
+        state.radius += (state.targetRadius - state.radius) * k;
+
+        const cp = Math.cos(state.pitch);
+        camera.position.set(
+          state.radius * cp * Math.sin(state.yaw),
+          state.radius * Math.sin(state.pitch),
+          state.radius * cp * Math.cos(state.yaw),
+        );
+        camera.lookAt(0, 0, 0);
+
+        hero.rotation.y = state.simTime * 0.12;
+        hero.rotation.x = Math.sin(state.simTime * 0.1) * 0.15;
+        points.rotation.y = state.simTime * 0.02;
+
+        heroUniforms.uTime.value = state.simTime;
+        particleUniforms.uTime.value = state.simTime;
+
+        composer.render();
+
+        if (!firstFrame) {
+          firstFrame = true;
+          window.__aurora.firstFrameAt = performance.now();
+          setProgress(100, 'ready');
+          setTimeout(() => {
+            loaderEl.classList.add('done');
+            document.body.classList.add('ready');
+            setTimeout(() => loaderEl.remove(), 700);
+          }, 250);
+          clearTimeout(watchdog);
+        }
+
+        // Telemetry at 4Hz, not per frame: DOM writes are the expensive part.
+        fpsAvg = fpsAvg * 0.9 + (1000 / rawDt) * 0.1;
+        msAvg = msAvg * 0.9 + rawDt * 0.1;
+        teleAcc += rawDt;
+        if (teleAcc > 250) {
+          teleAcc = 0;
+          tele.fps.textContent = Math.round(fpsAvg);
+          tele.ms.textContent = msAvg.toFixed(1) + ' ms';
+          tele.cam.textContent = state.radius.toFixed(2) + ' u';
+          const deg = (r) => (r * 180 / Math.PI).toFixed(0) + '\u00B0';
+          tele.head.textContent = deg(state.yaw) + ' / ' + deg(state.pitch);
+        }
+      }
+      rafId = requestAnimationFrame(loop);
+
+    } catch (err) {
+      fail('Startup failed: ' + (err?.message || String(err)));
+    }
+  </script>
+</body>
+</html>

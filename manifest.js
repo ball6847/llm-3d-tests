@@ -93,6 +93,10 @@ var BENCH_MANIFEST = {
       "bytes": 44424
     },
     {
+      "slug": "qwen-3.8-q3-v",
+      "bytes": 32470
+    },
+    {
       "slug": "tiel-coder-q3",
       "bytes": 32730
     }
