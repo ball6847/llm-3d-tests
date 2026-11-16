@@ -15,6 +15,10 @@ var BENCH_MANIFEST = {
       "bytes": 12360
     },
     {
+      "slug": "hy4-flash",
+      "bytes": 13628
+    },
+    {
       "slug": "inkling-2-small",
       "bytes": 21456
     },
