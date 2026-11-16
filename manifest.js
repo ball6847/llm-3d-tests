@@ -11,6 +11,10 @@ var BENCH_MANIFEST = {
       "bytes": 37431
     },
     {
+      "slug": "gemini-4-hydrogen",
+      "bytes": 20823
+    },
+    {
       "slug": "glm-5.3-flash",
       "bytes": 12360
     },
