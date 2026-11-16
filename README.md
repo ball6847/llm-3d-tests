@@ -10,6 +10,11 @@ Two pages:
 - `view.html` renders one model's real HTML full-viewport in an iframe, with a
   sticky header to go back, switch models, or open the raw file.
 
+On a phone the viewer header is one row: back arrow, collection chip, model
+name, and a sliders button. The button opens a drop-down with the two selects
+and the raw file link, so the scene keeps the rest of the screen. On wider
+screens the same controls sit inline in the header as usual.
+
 ## Collections
 
 A collection is one prompt sent to many models. `collections.js` lists them, and

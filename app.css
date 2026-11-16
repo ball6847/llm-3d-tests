@@ -581,6 +581,33 @@ h2 {
   min-width: 0;
 }
 
+/* The options panel is inline on wide screens and a drop-down on narrow
+   ones. On wide screens display:contents keeps the controls as direct
+   flex children of the bar, so the layout is unchanged. */
+.viewer-panel { display: contents; }
+
+.icon-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-s);
+  background: var(--bg-2);
+  color: var(--text-1);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.icon-btn:hover { background: var(--bg-3); border-color: var(--text-3); }
+.icon-btn[aria-expanded="true"] {
+  background: var(--bg-3);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
 .select {
   appearance: none;
   min-height: 44px;
@@ -712,15 +739,54 @@ h2 {
 /* -------------------------------------------------------------- responsive */
 
 @media (max-width: 720px) {
-  .viewer-controls {
-    flex-basis: 100%;
-    margin-inline-start: 0;
-    flex-wrap: wrap;
+  /* One row of chrome on a phone: back link, chip, model name, and a
+     button that opens the picks. The scene keeps the rest of the screen. */
+  .viewer-bar { gap: 8px 12px; }
+  .viewer-topbar .topbar-inner { min-height: 56px; padding-block: 6px; }
+  /* Basis 0 lets the model name shrink and ellipsize instead of pushing
+     the options button onto a second row. */
+  .viewer-id { flex: 1 1 0; }
+  .icon-btn { display: inline-flex; }
+  .viewer-panel {
+    display: none;
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    z-index: 5;
+    padding: 12px clamp(16px, 4vw, 32px) 16px;
+    background: var(--bg-1);
+    border-block-end: 1px solid var(--line-1);
+    box-shadow: 0 18px 32px rgba(0, 0, 0, 0.45);
   }
-  /* The variant name gets its own row so the model select stays readable. */
-  .viewer-controls .select-compact { flex: 1 1 100%; max-width: none; }
-  .select { flex: 1 1 auto; max-width: none; }
+  .viewer-panel.is-open { display: block; }
+  .viewer-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-inline-start: 0;
+  }
+  .viewer-controls .select-compact { flex: none; }
+  .select { flex: none; width: 100%; max-width: none; }
+  .raw-link { justify-content: center; }
   .viewer-model { font-size: 13px; }
+}
+
+@media (max-width: 520px) {
+  /* The arrow alone carries the way back; the label would crowd the
+     model name on a narrow screen. */
+  .viewer-bar .back-link span { display: none; }
+  .viewer-bar .back-link { padding-inline: 8px; margin-inline-start: 0; }
+  /* The chip gives the model name room to stay readable. */
+  .viewer-bar .collection-chip {
+    font-size: 10.5px;
+    padding: 2px 7px;
+  }
+}
+
+@media (max-width: 360px) {
+  /* Below this the chip and the model name cannot both fit. The
+     collection select inside the panel still names the collection. */
+  .viewer-bar .collection-chip { display: none; }
 }
 
 @media (max-width: 420px) {

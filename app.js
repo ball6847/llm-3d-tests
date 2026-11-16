@@ -261,6 +261,8 @@
     var errorDetail = document.getElementById('error-detail');
     var errorActions = document.getElementById('error-actions');
     var errorBack = document.getElementById('error-back');
+    var toggle = document.getElementById('viewer-toggle');
+    var panel = document.getElementById('viewer-panel');
 
     var lastKey = null;
     var currentSlug = defaultSlug();
@@ -286,6 +288,29 @@
        top-level navigation for swaps instead (see the select handler), so
        Back still works. The first load uses src, which replaces the
        iframe's initial about:blank and adds no entry. */
+    /* On a phone the two selects and the raw link live in a drop-down, so
+       the header stays one row and the scene keeps the height. */
+    function setPanel(open) {
+      if (!panel || !toggle) return;
+      panel.classList.toggle('is-open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    if (toggle && panel) {
+      toggle.addEventListener('click', function () {
+        setPanel(!panel.classList.contains('is-open'));
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') setPanel(false);
+      });
+      /* A tap on the scene closes the panel too. */
+      document.addEventListener('pointerdown', function (e) {
+        if (!panel.classList.contains('is-open')) return;
+        if (panel.contains(e.target) || toggle.contains(e.target)) return;
+        setPanel(false);
+      });
+    }
+
     function frameNavigate(src) {
       currentSrc = src;
       if (isHttp) {
@@ -469,6 +494,7 @@
 
     select.addEventListener('change', function () {
       if (!select.value) return;
+      setPanel(false);
       if (isHttp) {
         writeState(new URLSearchParams({ v: currentSlug, model: select.value }), false);
         apply();
