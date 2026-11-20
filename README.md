@@ -80,15 +80,20 @@ inside a prompt need no manual escaping. To edit one, change the text between
 the quotes and keep the quotes. The index page reads these constants and
 nothing else needs to change.
 
-The `aurora-torus` prompt was revised after the first 17 runs: the camera now
+The `aurora-torus` prompt was revised after the first 16 runs: the camera now
 orbits by dragging instead of following the pointer, and the wheel zooms.
-Only `qwen-3.8-27b-q3`, `hy4-flash`, `gemini-4-hydrogen`, and
-`qoder-sonus-xhigh` were run against the revised text.
+Only `qwen-3.8-27b-q3`, `hy4-flash`, `gemini-4-hydrogen`,
+`qoder-sonus-xhigh`, and `minimax-3.1-flash-xhigh` were run against the
+revised text.
 
 `qoder-sonus-xhigh` also shipped a control panel, sliders, a geometry
 switcher and keyboard shortcuts that the aurora-torus brief never asked for.
 It stays in this collection because it answers that prompt, and the extra
 interface is the model's own addition.
+
+`minimax-3.1-flash` was rerun at a higher reasoning effort and the newer
+file replaced the older one, so the collection lists
+`minimax-3.1-flash-xhigh` instead.
 
 The `aurora-torus-with-control` prompt was revised the same way: orbit by
 dragging, wheel zooms. `qwen-3.8-q3-v` answers the revised text. The other 5

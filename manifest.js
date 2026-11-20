@@ -39,8 +39,8 @@ var BENCH_MANIFEST = {
       "bytes": 12355
     },
     {
-      "slug": "minimax-3.1-flash",
-      "bytes": 26649
+      "slug": "minimax-3.1-flash-xhigh",
+      "bytes": 21971
     },
     {
       "slug": "mistral-large-4-0",

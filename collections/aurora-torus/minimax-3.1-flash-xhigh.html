@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Iridescent Knot</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #04050a;
+    overflow: hidden;             /* the wheel handler owns zoom, the page must not scroll */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  canvas { display: block; touch-action: none; cursor: grab; }
+  canvas.grabbing { cursor: grabbing; }
+
+  /* Loading overlay: covers the canvas until the first frame is on screen */
+  #loader {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; gap: 18px;
+    align-items: center; justify-content: center;
+    background: radial-gradient(circle at 50% 45%, #0b1024 0%, #04050a 70%);
+    color: #8ea3d8; letter-spacing: .18em; font-size: 12px;
+    transition: opacity .7s ease;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+  #loader .ring {
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 2px solid rgba(120,160,255,.18);
+    border-top-color: #6ea8ff;
+    animation: spin 1s linear infinite;
+  }
+  #loader .err { color: #ff8080; max-width: 32ch; text-align: center; line-height: 1.7; letter-spacing: .04em; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #hint {
+    position: fixed; left: 18px; bottom: 16px; z-index: 5;
+    color: rgba(150,170,215,.55); font-size: 11px; letter-spacing: .12em;
+    pointer-events: none; user-select: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="ring"></div>
+  <p id="loader-text">Loading&hellip;</p>
+</div>
+<div id="hint">drag to orbit &nbsp;/&nbsp; scroll to zoom</div>
+
+<script>
+  // Watchdog runs as a classic script so it still fires if the ES module import fails
+  // (blocked CDN, offline machine). Keeps the user informed instead of a blank page.
+  window.__sceneBooted = false;
+  setTimeout(function () {
+    if (window.__sceneBooted) return;
+    var txt = document.getElementById('loader-text');
+    if (txt) txt.className = 'err';
+    if (txt) txt.textContent = 'Three.js did not load. Check the network and reload.';
+  }, 15000);
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+const loader = document.getElementById('loader');
+const loaderText = document.getElementById('loader-text');
+
+/* ------------------------------------------------------------------ *
+ * Renderer / scene / camera
+ * ------------------------------------------------------------------ */
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+// Cap pixel ratio: a Retina 3x display would otherwise render 9x the fragments.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04050a);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 0, 9);
+
+/* ------------------------------------------------------------------ *
+ * Hero object: procedurally generated torus knot + custom GLSL
+ * ------------------------------------------------------------------ */
+const heroUniforms = {
+  uTime: { value: 0 },
+  uColorA: { value: new THREE.Color(0x2b6cff) },   // deep base
+  uColorB: { value: new THREE.Color(0x00ffc8) },   // aurora green
+  uColorC: { value: new THREE.Color(0xff3fa4) }    // magenta rim
+};
+
+// Displacement field, shared by vertex and normal estimation.
+const DISPLACE_GLSL = /* glsl */`
+  float wave( vec3 p ) {
+    return sin( p.x * 3.1 + uTime * 1.10 )
+         * cos( p.y * 2.7 - uTime * 0.85 )
+         * sin( p.z * 3.6 + uTime * 0.60 ) * 0.085;
+  }
+`;
+
+const heroMaterial = new THREE.ShaderMaterial({
+  uniforms: heroUniforms,
+  vertexShader: /* glsl */`
+    uniform float uTime;
+    varying vec3 vNormalV;
+    varying vec3 vViewDir;
+    varying vec2 vUv;
+    varying float vDisp;
+    ${DISPLACE_GLSL}
+
+    void main() {
+      vec3 pos = position;
+      vec3 n   = normalize( normal );
+
+      // Build a tangent frame around the surface normal so the displacement
+      // gradient can be turned into a corrected normal (bump-by-derivative).
+      vec3 t = cross( pos, n );
+      float tl = length( t );
+      t = tl > 1e-4 ? t / tl : normalize( cross( n, vec3( 0.0, 0.0, 1.0 ) ) );
+      vec3 b = normalize( cross( n, t ) );
+
+      float d0 = wave( pos );
+      float h  = 0.03;
+      float dt = ( wave( pos + t * h ) - d0 ) / h;
+      float db = ( wave( pos + b * h ) - d0 ) / h;
+
+      vec3 displaced = pos + n * d0;
+      vNormalV = normalize( normalMatrix * normalize( n - ( t * dt + b * db ) ) );
+      vUv      = uv;               // uv.x runs along the knot path, uv.y around the tube
+      vDisp    = d0;
+
+      vec4 mv = modelViewMatrix * vec4( displaced, 1.0 );
+      vViewDir = normalize( -mv.xyz );          // direction from surface to camera
+      gl_Position = projectionMatrix * mv;
+    }
+  `,
+  fragmentShader: /* glsl */`
+    uniform float uTime;
+    uniform vec3 uColorA;
+    uniform vec3 uColorB;
+    uniform vec3 uColorC;
+    varying vec3 vNormalV;
+    varying vec3 vViewDir;
+    varying vec2 vUv;
+    varying float vDisp;
+
+    // Cosine palette (Inigo Quilez): cheap, smooth, endlessly recolourable.
+    vec3 palette( float t ) {
+      return 0.5 + 0.5 * cos( 6.28318 * ( vec3( 1.0, 1.0, 1.0 ) * t + vec3( 0.0, 0.33, 0.67 ) ) );
+    }
+
+    void main() {
+      vec3 N = normalize( vNormalV );
+      vec3 V = normalize( vViewDir );
+
+      float fresnel = pow( 1.0 - clamp( dot( N, V ), 0.0, 1.0 ), 2.2 );
+
+      // Aurora ribbons travel along the tube: uv.x is the path length.
+      float s = vUv.x * 2.2 + uTime * 0.18
+              + sin( vUv.y * 6.28318 + uTime * 0.7 ) * 0.12
+              + sin( vUv.x * 9.0 - uTime * 0.4 ) * 0.06;
+
+      // pow() deepens the palette mid-tones, so the hue stays rich instead of
+      // washing out to pastel once bloom and tone mapping hit it.
+      vec3 base   = pow( palette( s ), vec3( 1.35 ) );
+      vec3 aurora = mix( base, uColorB, 0.20 );
+
+      // Breathing pulse: the whole object swells and dims on a slow cycle.
+      float pulse = 0.72 + 0.34 * sin( uTime * 1.3 + vDisp * 6.0 );
+
+      vec3 col = aurora * ( 0.34 + 0.34 * fresnel ) * pulse;
+      col = mix( col, uColorC, fresnel * 0.50 );                    // magenta rim
+      col += vec3( 0.82, 0.95, 1.0 ) * pow( fresnel, 4.0 ) * 1.6;   // hot edge, above 1.0 -> blooms
+      col += uColorA * 0.08;
+
+      // Push saturation back up: bright additive terms wash the hue out.
+      float lum = dot( col, vec3( 0.299, 0.587, 0.114 ) );
+      col = mix( vec3( lum ), col, 1.45 );
+
+      gl_FragColor = vec4( col, 1.0 );
+    }
+  `
+});
+
+const heroGeometry = new THREE.TorusKnotGeometry(1.7, 0.44, 320, 48, 2, 3);
+const hero = new THREE.Mesh(heroGeometry, heroMaterial);
+scene.add(hero);
+
+// Background dome: a cheap gradient so the black is not perfectly flat.
+// Kept dim so the bloom threshold still ignores it.
+const bgMaterial = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  depthWrite: false,
+  vertexShader: /* glsl */`
+    varying vec3 vDir;
+    void main() {
+      vDir = normalize( position );
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+    }
+  `,
+  fragmentShader: /* glsl */`
+    varying vec3 vDir;
+    void main() {
+      float h = vDir.y * 0.5 + 0.5;
+      vec3 col = mix( vec3( 0.0, 0.002, 0.012 ), vec3( 0.016, 0.020, 0.055 ), h );
+      float aura = pow( max( 0.0, vDir.z ), 4.0 );
+      col += vec3( 0.030, 0.018, 0.055 ) * aura;
+      gl_FragColor = vec4( col, 1.0 );
+    }
+  `
+});
+const backgroundDome = new THREE.Mesh(new THREE.SphereGeometry(60, 32, 16), bgMaterial);
+backgroundDome.renderOrder = -1;   // draw first, never write depth
+scene.add(backgroundDome);
+
+/* ------------------------------------------------------------------ *
+ * Particle field: BufferGeometry + gl.POINTS (no per-particle meshes)
+ * ------------------------------------------------------------------ */
+function makeParticleSystem(count, cfg) {
+  const positions = new Float32Array(count * 3);
+  const speeds   = new Float32Array(count);
+  const sizes    = new Float32Array(count);
+  const phases   = new Float32Array(count);
+  const tints    = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    // Radius distribution: sqrt keeps the disc evenly covered instead of clumping.
+    const r = cfg.rMin + (cfg.rMax - cfg.rMin) * Math.sqrt(Math.random());
+    const a = Math.random() * Math.PI * 2;
+    const y = (Math.random() * 2 - 1) * cfg.ySpread * (0.35 + r * 0.12);
+
+    positions[i * 3 + 0] = Math.cos(a) * r;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = Math.sin(a) * r;
+
+    speeds[i] = cfg.speed * (0.6 + Math.random() * 0.8) * (Math.random() < 0.5 ? -1 : 1);
+    sizes[i]  = cfg.size * (0.45 + Math.random() * 1.1);
+    phases[i] = Math.random() * Math.PI * 2;
+    tints[i]  = Math.random();
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+  geo.setAttribute('aSize',  new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  geo.setAttribute('aTint',  new THREE.BufferAttribute(tints, 1));
+  // The points move in the shader, so the static bounds are wrong; disable culling.
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), cfg.rMax + cfg.ySpread + 2);
+
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      // Projection scale: world units -> device pixels for a point of size 1.
+      uScale: { value: pointScale() },
+      uColorA: { value: new THREE.Color(cfg.colorA) },
+      uColorB: { value: new THREE.Color(cfg.colorB) },
+      uOpacity: { value: cfg.opacity }
+    },
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      uniform float uScale;
+      uniform float uOpacity;
+      attribute float aSpeed;
+      attribute float aSize;
+      attribute float aPhase;
+      attribute float aTint;
+      varying float vAlpha;
+      varying float vTint;
+
+      void main() {
+        // Rebuild the orbit from the original radius + angle so the motion is
+        // analytic in the shader (no CPU work per particle per frame).
+        float r = length( position.xz );
+        float a = atan( position.z, position.x ) + uTime * aSpeed + aPhase;
+        float y = position.y + sin( uTime * 0.6 + aPhase * 3.0 ) * 0.4;
+
+        // Tilt each orbit plane slightly for a less mechanical swarm.
+        float tilt = sin( aPhase ) * 0.7;
+        vec3 p = vec3( cos( a ) * r, 0.0, sin( a ) * r );
+        p = vec3( p.x, y * cos( tilt ) - p.z * sin( tilt ), y * sin( tilt ) + p.z * cos( tilt ) );
+
+        vec4 mv = modelViewMatrix * vec4( p, 1.0 );
+        float depth = -mv.z;                        // positive distance in front of the camera
+
+        // Depth-based fade: hide particles that are nearly on the lens (huge blobs)
+        // and particles so far away they would only add noise.
+        float nearFade = smoothstep( 0.6, 2.6, depth );
+        float farFade  = 1.0 - smoothstep( 24.0, 52.0, depth );
+        float fade     = nearFade * farFade;
+
+        vAlpha = fade * uOpacity;
+        vTint  = aTint;
+
+        // Perspective size in device pixels, then modulated by the same depth fade.
+        gl_PointSize = max( 1.0, aSize * uScale * ( 0.35 + 0.65 * fade ) / max( depth, 0.001 ) );
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      uniform vec3 uColorA;
+      uniform vec3 uColorB;
+      varying float vAlpha;
+      varying float vTint;
+
+      void main() {
+        vec2 uv = gl_PointCoord - 0.5;
+        float d = length( uv );
+        if ( d > 0.5 ) discard;                    // cheap circular mask
+        float glow = pow( smoothstep( 0.5, 0.0, d ), 2.0 );
+        vec3 col = mix( uColorA, uColorB, vTint );
+        // Additive blending sums up thousands of points, so each one stays dim.
+        gl_FragColor = vec4( col * glow * vAlpha * 0.5, glow * vAlpha );
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  scene.add(points);
+  return { points, geo, mat };
+}
+
+// Dense inner swarm close to the hero, plus a faint far dust layer for depth.
+const swarm = makeParticleSystem(9000, {
+  rMin: 2.6, rMax: 8.5, ySpread: 1.6, speed: 0.16, size: 0.042,
+  colorA: 0x4f8cff, colorB: 0x9affe0, opacity: 0.85
+});
+const dust = makeParticleSystem(3500, {
+  rMin: 12, rMax: 26, ySpread: 9, speed: 0.05, size: 0.032,
+  colorA: 0x2b4b8f, colorB: 0x7a4fd0, opacity: 0.45
+});
+
+/* ------------------------------------------------------------------ *
+ * Post-processing: EffectComposer + RenderPass + UnrealBloomPass
+ * ------------------------------------------------------------------ */
+const composer = new EffectComposer(renderer);
+composer.setPixelRatio(renderer.getPixelRatio());
+composer.setSize(window.innerWidth, window.innerHeight);
+
+const renderPass = new RenderPass(scene, camera);
+composer.addPass(renderPass);
+
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  1.05,   // strength
+  0.62,   // radius
+  0.72    // threshold: only the emissive parts of the scene bloom
+);
+composer.addPass(bloomPass);
+
+// OutputPass applies tone mapping and the sRGB conversion at the very end.
+composer.addPass(new OutputPass());
+
+/* ------------------------------------------------------------------ *
+ * Interaction: drag to orbit, wheel to zoom
+ * ------------------------------------------------------------------ */
+const cam = {
+  radius: 9.5, targetRadius: 9.5, minRadius: 4.2, maxRadius: 24,
+  yaw: 0.65, targetYaw: 0.65,
+  pitch: 0.28, targetPitch: 0.28,
+  minPitch: -1.35, maxPitch: 1.35
+};
+
+const YAW_SENS = 0.0055;    // radians per pixel, horizontal
+const PITCH_SENS = 0.0045;  // radians per pixel, vertical
+const ROT_DAMP = 6.0;       // higher = snappier
+const ZOOM_DAMP = 7.0;
+
+const pointer = { down: false, x: 0, y: 0, vel: 0 };
+const activePointers = new Map();
+let pinchDistance = 0;
+
+const canvas = renderer.domElement;
+
+canvas.addEventListener('pointerdown', (e) => {
+  try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* pointer already released */ }
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 1) {
+    pointer.down = true;
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    pointer.vel = 0;
+    canvas.classList.add('grabbing');
+  } else if (activePointers.size === 2) {
+    const pts = [...activePointers.values()];
+    pinchDistance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+  if (activePointers.size === 2) {
+    // Two-finger pinch maps to zoom on touch devices.
+    const pts = [...activePointers.values()];
+    const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    if (pinchDistance > 0) {
+      cam.targetRadius = clamp(cam.targetRadius * (pinchDistance / Math.max(d, 1)), cam.minRadius, cam.maxRadius);
+    }
+    pinchDistance = d;
+    return;
+  }
+
+  if (!pointer.down) return;
+  const dx = e.clientX - pointer.x;
+  const dy = e.clientY - pointer.y;
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+
+  cam.targetYaw -= dx * YAW_SENS;
+  cam.targetPitch = clamp(cam.targetPitch - dy * PITCH_SENS, cam.minPitch, cam.maxPitch);
+  // Flick momentum: the drag becomes an angular velocity (rad/s), scaled down
+  // and clamped so a fast swipe cannot send the camera into an endless spin.
+  pointer.vel = clamp(-dx * YAW_SENS * 6.0, -6, 6);
+});
+
+function endPointer(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) pinchDistance = 0;
+  if (activePointers.size === 0) {
+    pointer.down = false;
+    canvas.classList.remove('grabbing');
+  } else if (activePointers.size === 1) {
+    // One finger left after a pinch: resync so the drag does not jump.
+    const remaining = [...activePointers.values()][0];
+    pointer.x = remaining.x;
+    pointer.y = remaining.y;
+  }
+}
+canvas.addEventListener('pointerup', endPointer);
+canvas.addEventListener('pointercancel', endPointer);
+canvas.addEventListener('pointerleave', endPointer);
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();                         // the wheel zooms, the page must not scroll
+  cam.targetRadius = clamp(cam.targetRadius + e.deltaY * 0.0035, cam.minRadius, cam.maxRadius);
+}, { passive: false });
+
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+// Converts a world-space radius into device pixels at unit depth, so point
+// sprites keep a physical size instead of a magic constant.
+function pointScale() {
+  const h = renderer.getDrawingBufferSize(new THREE.Vector2()).y;
+  return h / (2 * Math.tan((camera.fov * Math.PI) / 360));
+}
+
+/* ------------------------------------------------------------------ *
+ * Resize
+ * ------------------------------------------------------------------ */
+function onResize() {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(w, h);
+  // Composer has to be told about the pixel ratio separately, then resized.
+  // composer.setSize() forwards the effective (ratio scaled) size to every
+  // pass, so the bloom targets stay sharp on Retina displays.
+  composer.setPixelRatio(renderer.getPixelRatio());
+  composer.setSize(w, h);
+  const scale = pointScale();
+  swarm.mat.uniforms.uScale.value = scale;
+  dust.mat.uniforms.uScale.value = scale;
+}
+window.addEventListener('resize', onResize);
+
+/* ------------------------------------------------------------------ *
+ * Animation loop
+ * ------------------------------------------------------------------ */
+let last = performance.now();
+let firstFrame = true;
+
+function frame(now) {
+  requestAnimationFrame(frame);
+
+  // requestAnimationFrame paces the loop to the display refresh (60Hz on most
+  // panels). The dt clamp keeps the simulation stable when a tab is restored
+  // or the GC pauses for a frame: without it the camera would jump.
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+
+  // Frame-rate independent damping: the smoothing factor follows real elapsed
+  // time, so the motion feels identical on 60Hz and 144Hz displays.
+  const kRot = 1 - Math.exp(-ROT_DAMP * dt);
+  const kZoom = 1 - Math.exp(-ZOOM_DAMP * dt);
+
+  if (!pointer.down && Math.abs(pointer.vel) > 0.02) {
+    cam.targetYaw += pointer.vel * dt;
+    pointer.vel *= Math.exp(-5.0 * dt);       // momentum decays to a stop
+  }
+
+  cam.yaw += (cam.targetYaw - cam.yaw) * kRot;
+  cam.pitch += (cam.targetPitch - cam.pitch) * kRot;
+  cam.radius += (cam.targetRadius - cam.radius) * kZoom;
+
+  const cp = Math.cos(cam.pitch);
+  camera.position.set(
+    Math.sin(cam.yaw) * cp * cam.radius,
+    Math.sin(cam.pitch) * cam.radius,
+    Math.cos(cam.yaw) * cp * cam.radius
+  );
+  camera.lookAt(0, 0, 0);
+
+  hero.rotation.y = t * 0.18;
+  hero.rotation.x = Math.sin(t * 0.13) * 0.28;
+
+  heroUniforms.uTime.value = t;
+  swarm.mat.uniforms.uTime.value = t;
+  dust.mat.uniforms.uTime.value = t;
+
+  composer.render();
+
+  if (firstFrame) {
+    firstFrame = false;
+    window.__sceneBooted = true;
+    // Fade the loader only after a frame is actually on screen.
+    requestAnimationFrame(() => {
+      loader.classList.add('hidden');
+      setTimeout(() => { loader.style.display = 'none'; }, 800);
+    });
+  }
+}
+requestAnimationFrame(frame);
+
+/* ------------------------------------------------------------------ *
+ * Teardown and failure handling
+ * ------------------------------------------------------------------ */
+// Release GPU memory if the page is discarded; avoids leaking textures and buffers.
+function dispose() {
+  heroGeometry.dispose();
+  heroMaterial.dispose();
+  bgMaterial.dispose();
+  backgroundDome.geometry.dispose();
+  swarm.geo.dispose(); swarm.mat.dispose();
+  dust.geo.dispose(); dust.mat.dispose();
+  composer.passes.forEach((p) => { if (p.dispose) p.dispose(); });
+  composer.renderTarget1.dispose();
+  composer.renderTarget2.dispose();
+  renderer.dispose();
+}
+// A bfcache restore must keep the scene alive, so only tear down for real.
+window.addEventListener('pagehide', (e) => { if (!e.persisted) dispose(); });
+
+// Small handle for debugging and for automated smoke tests.
+window.__scene = { cam, camera, renderer, composer, bloomPass, swarm, dust, hero };
+
+canvas.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault();                          // allows the context to be restored
+  loader.style.display = 'flex';
+  loader.classList.remove('hidden');
+  loaderText.className = 'err';
+  loaderText.textContent = 'Graphics context lost. Reload the page.';
+});
+</script>
+</body>
+</html>
