@@ -82,7 +82,7 @@ nothing else needs to change.
 
 The `aurora-torus` prompt was revised after the first 16 runs: the camera now
 orbits by dragging instead of following the pointer, and the wheel zooms.
-Only `qwen-3.8-27b-q3`, `hy4-flash`, `gemini-4-hydrogen`,
+Only `qwen-3.8-27b-q3`, `tencent-hy4-flash`, `gemini-4-hydrogen`,
 `qoder-sonus-xhigh`, `minimax-3.1-flash-xhigh`, `daisyrose-27b-q3`, and
 `meituan-longcat-2.5` were run against the revised text.
 

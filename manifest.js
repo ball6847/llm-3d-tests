@@ -23,10 +23,6 @@ var BENCH_MANIFEST = {
       "bytes": 12360
     },
     {
-      "slug": "hy4-flash",
-      "bytes": 13628
-    },
-    {
       "slug": "inkling-2-small",
       "bytes": 21456
     },
@@ -71,6 +67,10 @@ var BENCH_MANIFEST = {
       "bytes": 17555
     },
     {
+      "slug": "qoder-qoduck",
+      "bytes": 48715
+    },
+    {
       "slug": "qoder-sonus-xhigh",
       "bytes": 52809
     },
@@ -79,12 +79,12 @@ var BENCH_MANIFEST = {
       "bytes": 14592
     },
     {
-      "slug": "qwen4-max-preview-qoduck",
-      "bytes": 48715
-    },
-    {
       "slug": "tencent-hy4",
       "bytes": 25986
+    },
+    {
+      "slug": "tencent-hy4-flash",
+      "bytes": 13628
     },
     {
       "slug": "tiel-coder-q3",
