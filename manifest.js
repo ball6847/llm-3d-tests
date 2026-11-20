@@ -63,6 +63,10 @@ var BENCH_MANIFEST = {
       "bytes": 17555
     },
     {
+      "slug": "qoder-sonus-xhigh",
+      "bytes": 52809
+    },
+    {
       "slug": "qwen-3.8-27b-q3",
       "bytes": 14592
     },

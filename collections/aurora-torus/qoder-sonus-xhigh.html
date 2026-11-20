@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080b0c">
+  <meta name="description" content="A small universe of light and motion. An interactive, entirely procedural Three.js experiment.">
+  <title>Aether | A study in light &amp; motion</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23080b0c'/%3E%3Cpath d='M20 5L24 16L35 20L24 24L20 35L16 24L5 20L16 16Z' fill='%23cdf9d7'/%3E%3C/svg%3E">
+  <style>
+    :root { color-scheme: dark; --bg: #080b0c; --text: #e8edeb; --muted: #89918e; --accent: #cbf4d4; --line: rgba(213,231,219,.12); }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body { background: var(--bg); color: var(--text); font: 13px Arial, Helvetica, sans-serif; -webkit-font-smoothing: antialiased; }
+    button, input { font: inherit; }
+    button { color: inherit; cursor: pointer; }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    button { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, input:focus-visible, canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+    button, a, input { touch-action: manipulation; }
+    button svg { pointer-events: none; }
+    svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    [hidden] { display: none !important; }
+    #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+    #scene.dragging { cursor: grabbing; }
+    .vignette { position: fixed; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 48% 46%, transparent 25%, rgba(5,8,9,.2) 65%, rgba(5,8,9,.65)); }
+    .grain { position: fixed; inset: 0; pointer-events: none; opacity: .027; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' d='M0 0h180v180H0z'/%3E%3C/svg%3E"); }
+    .header { position: fixed; inset: 0 40px auto; height: 90px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); z-index: 2; }
+    .identity, .header-actions, .wordmark, .experiment, .live, .panel-heading, .control-label, .toggle-row, .footer, .dock, .dock button { display: flex; align-items: center; }
+    .identity { gap: 24px; }
+    .wordmark { gap: 12px; font-size: 22px; font-weight: 500; letter-spacing: 4.8px; }
+    .mark { width: 31px; height: 31px; color: var(--accent); stroke-width: 1.1; }
+    .experiment { border-left: 1px solid var(--line); padding-left: 24px; color: var(--muted); line-height: 1.65; font-size: 9px; letter-spacing: 1.8px; }
+    .header-actions { gap: 21px; }
+    .live { gap: 8px; font-size: 10px; letter-spacing: 1.1px; color: #b8c2bd; }
+    .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 9px #9becae55; }
+    .icon-button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: #b4bdb8; transition: background .2s, color .2s; }
+    .icon-button:hover { background: #ffffff0d; color: #fff; }
+    .intro { position: fixed; top: 151px; left: 48px; pointer-events: none; }
+    .eyebrow { margin: 0 0 21px; color: #9ba8a0; font-size: 9px; letter-spacing: 2.35px; font-weight: 400; }
+    h1 { margin: 0; font-size: clamp(34px, 3.1vw, 48px); line-height: 1.12; letter-spacing: -1.8px; font-weight: 400; }
+    h1 em { font-family: Georgia, 'Times New Roman', serif; font-weight: 400; color: var(--accent); }
+    .intro-copy { margin: 20px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .vertical-note { position: fixed; left: 47px; top: 51%; writing-mode: vertical-rl; transform: rotate(180deg); color: #6e7872; font-size: 9px; letter-spacing: 2px; display: flex; align-items: center; gap: 15px; pointer-events: none; }
+    .vertical-note::before { content: ''; height: 36px; width: 1px; background: #7e96814d; }
+    .specimen { position: fixed; left: 48px; bottom: 118px; pointer-events: none; }
+    .specimen-index { font: 10px 'Courier New', monospace; color: #8f9c93; letter-spacing: 1.5px; margin-bottom: 13px; }
+    .specimen h2 { font-size: 17px; font-weight: 400; margin: 0 0 8px; letter-spacing: .2px; }
+    .specimen p { font-size: 11px; color: #818d85; margin: 0; }
+    .specimen-rule { width: 30px; height: 1px; background: #9fae9f59; margin-bottom: 18px; }
+    .panel { position: fixed; top: 137px; right: 40px; width: 264px; padding: 23px; border: 1px solid #dcece015; border-radius: 14px; background: linear-gradient(140deg, #1b2223a1, #0c1113c9); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 16px 60px #0000001f; z-index: 3; }
+    .panel-heading { justify-content: space-between; margin-bottom: 26px; }
+    .panel-heading h2 { font-size: 13px; margin: 0; font-weight: 500; letter-spacing: .15px; }
+    .panel-heading svg { color: #9aaba0; width: 16px; height: 16px; }
+    .section-label { font-size: 9px; color: #a0aaa4; letter-spacing: 1.55px; line-height: 1; }
+    .geometry-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .geometry-button { background: #ffffff03; border: 1px solid #ffffff10; border-radius: 7px; height: 75px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; font-size: 10px; color: #919e95; transition: all .2s; }
+    .geometry-button svg { width: 27px; height: 27px; stroke-width: 1; }
+    .geometry-button:hover { background: #ffffff08; border-color: #ffffff33; }
+    .geometry-button[aria-pressed="true"] { border-color: #c1e9c777; background: #c2f4c70b; color: #d0eed3; }
+    .palette-section { margin-top: 25px; }
+    .control-label { justify-content: space-between; gap: 8px; }
+    .palette-name { font-size: 10px; color: #c0c8c2; }
+    .palette-options { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+    .swatch { height: 29px; border: 3px solid #111719; border-radius: 6px; outline: 1px solid #ffffff10; position: relative; transition: outline .2s, transform .2s; }
+    .swatch:hover { transform: translateY(-2px); outline-color: #ffffff65; }
+    .swatch[aria-pressed="true"] { outline-color: #cee8d2aa; }
+    .swatch[aria-pressed="true"]::after { content: ''; display: block; position: absolute; top: 5px; left: 50%; width: 4px; height: 7px; border-bottom: 1.5px solid #fff; border-right: 1.5px solid #fff; transform: translateX(-50%) rotate(40deg); filter: drop-shadow(0 1px 2px #000); }
+    .aurora { background: linear-gradient(120deg, #7cf2c9, #7095da 52%, #bd82db); }
+    .ember { background: linear-gradient(120deg, #f1d084, #e69360 48%, #b64d70); }
+    .ocean { background: linear-gradient(120deg, #9cebf2, #4488de 55%, #5661bb); }
+    .rose { background: linear-gradient(120deg, #eed0cc, #dc82ac 50%, #9c67cf); }
+    .panel-divider { height: 1px; background: #dcece00e; margin: 23px 0; }
+    .slider-group + .slider-group { margin-top: 22px; }
+    .slider-group label, .toggle-row label { color: #b5beb9; font-size: 11px; }
+    output { color: #adbcaf; font: 10px 'Courier New', monospace; }
+    input[type="range"] { --fill: 30%; appearance: none; -webkit-appearance: none; width: 100%; height: 3px; display: block; border-radius: 2px; margin: 18px 0 6px; background: linear-gradient(to right, #b8d8bf var(--fill), #ffffff16 var(--fill)); cursor: pointer; }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 9px; height: 9px; background: #d6efdc; border: 2px solid #e5f5e9; border-radius: 50%; box-shadow: 0 0 0 4px #c8ecc90b; }
+    input[type="range"]::-moz-range-thumb { width: 7px; height: 7px; background: #d6efdc; border: 1px solid #e5f5e9; border-radius: 50%; }
+    .toggle-row { justify-content: space-between; margin-top: 23px; }
+    .switch { width: 29px; height: 17px; position: relative; border: 1px solid #ffffff20; background: #404843; border-radius: 20px; padding: 0; transition: background .2s; }
+    .switch::before { content: ''; position: absolute; width: 11px; height: 11px; top: 2px; left: 2px; border-radius: 50%; background: #c4cec8; transition: transform .2s; }
+    .switch[aria-checked="true"] { background: #a9cdb2; border-color: #a9cdb2; }
+    .switch[aria-checked="true"]::before { transform: translateX(12px); background: #263c2e; }
+    .reset-settings { background: transparent; border: 0; padding: 0; margin-top: 25px; display: flex; align-items: center; gap: 7px; font-size: 10px; color: #87958b; }
+    .reset-settings svg { width: 12px; height: 12px; }
+    .reset-settings:hover { color: var(--text); }
+    .panel-footnote { position: fixed; right: 59px; top: 653px; font-size: 9px; letter-spacing: .3px; color: #718077; display: flex; align-items: center; gap: 7px; pointer-events: none; }
+    .panel-footnote svg { width: 11px; height: 11px; }
+    .transport { position: fixed; left: 50%; transform: translateX(-50%); bottom: 100px; z-index: 2; }
+    .dock { gap: 5px; padding: 7px; background: #12191abc; backdrop-filter: blur(15px); border: 1px solid #dcece017; border-radius: 11px; box-shadow: 0 8px 30px #0003; }
+    .dock button { justify-content: center; gap: 8px; white-space: nowrap; height: 33px; padding: 0 12px; background: transparent; border: 0; border-radius: 6px; font-size: 10px; color: #a8b4ac; transition: background .2s, color .2s; }
+    .dock button:hover { background: #ffffff0b; color: #f3fff5; }
+    .dock button:first-child { color: #d8eadd; }
+    .dock svg { width: 14px; height: 14px; }
+    .dock-separator { width: 1px; height: 17px; background: #ffffff12; }
+    .hint { display: flex; gap: 18px; justify-content: center; align-items: center; margin-top: 17px; color: #87968b; font-size: 10px; letter-spacing: .15px; white-space: nowrap; }
+    .hint span { display: flex; align-items: center; gap: 7px; }
+    .hint svg { width: 12px; height: 12px; color: #a3b2a7; }
+    .hint .dot { height: 2px; width: 2px; background: #728077; }
+    .footer { position: fixed; inset: auto 40px 0; height: 57px; justify-content: space-between; border-top: 1px solid var(--line); color: #7e8b82; font-size: 9px; letter-spacing: 1px; pointer-events: none; }
+    .footer-left, .footer-right { display: flex; align-items: center; gap: 11px; }
+    .footer-center { color: #64726a; font-size: 8px; letter-spacing: 1.7px; position: absolute; left: 50%; transform: translateX(-50%); white-space: nowrap; }
+    .footer .live-dot { width: 4px; height: 4px; box-shadow: none; }
+    .footer-right { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: .1px; gap: 19px; }
+    .footer-right span + span { border-left: 1px solid var(--line); padding-left: 18px; }
+    #fps { color: #b7cbbd; font: inherit; }
+    .tune-button { display: none; background: #b9e4c012; border: 1px solid #b9e4c035; border-radius: 6px; padding: 8px 10px; align-items: center; gap: 7px; font-size: 11px; color: var(--accent); }
+    .tune-button svg { width: 15px; height: 15px; }
+    #loading { position: fixed; inset: 0; z-index: 20; background: #080b0c; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity .75s ease, visibility .75s; }
+    #loading.finished { opacity: 0; visibility: hidden; pointer-events: none; }
+    .loading-symbol { color: var(--accent); width: 42px; height: 42px; animation: turn 6s linear infinite; margin-bottom: 24px; }
+    #loading-title { font-size: 16px; font-weight: 400; letter-spacing: .5px; margin: 0; }
+    #loading-detail { font-size: 12px; color: var(--muted); max-width: 320px; text-align: center; line-height: 1.7; padding: 0 15px; }
+    .retry-button { margin-top: 12px; padding: 10px 20px; background: var(--accent); border: 0; border-radius: 6px; color: #14251a; }
+    @keyframes turn { to { transform: rotate(360deg); } }
+    #toast { position: fixed; left: 50%; bottom: 200px; transform: translate(-50%, 8px); background: #202b24; border: 1px solid #d7eed522; color: #e0eae1; border-radius: 7px; padding: 11px 17px; font-size: 12px; z-index: 12; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; }
+    #toast.visible { opacity: 1; transform: translate(-50%, 0); }
+    dialog { width: min(400px, calc(100vw - 40px)); padding: 30px; background: #111918; color: var(--text); border: 1px solid #d0ecd22b; border-radius: 15px; box-shadow: 0 30px 120px #000; }
+    dialog::backdrop { background: #020806b5; backdrop-filter: blur(8px); }
+    dialog h2 { font-size: 23px; font-weight: 400; letter-spacing: -.5px; margin: 0 0 13px; }
+    dialog p { color: #a2afa6; font-size: 12px; line-height: 1.8; }
+    dialog .icon-button { position: absolute; top: 16px; right: 16px; width: 27px; height: 27px; }
+    dialog dl { display: grid; grid-template-columns: 1fr 1fr; font-size: 11px; line-height: 2.5; border-top: 1px solid var(--line); padding-top: 14px; margin-bottom: 0; }
+    dialog dt { color: #9fb0a4; }
+    dialog dd { margin: 0; text-align: right; color: #d2e5d6; }
+    @media (min-width: 1700px) { .panel { right: 60px; top: 160px; } .panel-footnote { right: 79px; top: 676px; } .intro { left: 60px; top: 170px; } .specimen { left: 60px; } }
+    @media (max-width: 1100px) { .header { inset-inline: 28px; } .intro { left: 32px; top: 135px; } h1 { font-size: 36px; } .panel { right: 28px; width: 236px; padding: 19px; } .panel-footnote { right: 40px; top: 645px; } .specimen { left: 32px; } .vertical-note { left: 31px; } .footer { inset-inline: 28px; } .transport { left: 48%; } }
+    @media (max-height: 780px) and (min-width: 761px) { .header { height: 76px; } .intro { top: 116px; } .panel { top: 108px; padding: 18px 21px; } .panel-heading { margin-bottom: 20px; } .geometry-button { height: 62px; } .palette-section { margin-top: 20px; } .panel-divider { margin: 19px 0; } .slider-group + .slider-group { margin-top: 18px; } .reset-settings { margin-top: 20px; } .panel-footnote { top: 572px; } .transport { bottom: 83px; } .specimen { bottom: 101px; } .footer { height: 46px; } }
+    @media (max-width: 760px) { .header { inset-inline: 22px; height: 77px; } .wordmark { font-size: 18px; letter-spacing: 3.5px; gap: 9px; } .mark { width: 26px; height: 26px; } .experiment, .live, #fullscreen, .vertical-note, .panel-footnote, .footer-center { display: none; } .header-actions { gap: 12px; } .tune-button { display: flex; } .intro { top: 112px; left: 26px; } .eyebrow { font-size: 8px; margin-bottom: 16px; letter-spacing: 1.8px; } h1 { font-size: 37px; } .intro-copy { font-size: 11px; margin-top: 14px; } .panel { display: none; right: 22px; top: 88px; width: 260px; padding: 21px; max-height: calc(100dvh - 170px); overflow-y: auto; background: #101918f2; } .panel.open { display: block; } .specimen { left: 26px; bottom: 155px; } .specimen h2 { font-size: 14px; } .specimen-index { font-size: 8px; margin-bottom: 8px; } .specimen p { font-size: 10px; } .specimen-rule { display: none; } .transport { left: 50%; bottom: 70px; } .dock { padding: 6px; } .dock button { padding: 0 11px; height: 34px; font-size: 10px; } .hint { font-size: 9px; margin-top: 12px; } .footer { inset-inline: 22px; height: 40px; font-size: 8px; } .footer-right { font-size: 9px; gap: 10px; } .footer-right span + span { padding-left: 10px; } #toast { bottom: 165px; width: max-content; max-width: 90vw; text-align: center; } }
+    @media (max-width: 380px) { .header { inset-inline: 16px; } .wordmark { font-size: 16px; gap: 7px; } .header-actions { gap: 8px; } .intro { left: 22px; } h1 { font-size: 32px; } .dock button { padding: 0 8px; } .footer { inset-inline: 16px; } .footer-left { font-size: 7px; } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  </style>
+  <!-- Pin all modules to the same release. Import maps let this run without a build step. -->
+  <script type="importmap">
+    { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    } }
+  </script>
+</head>
+<body>
+  <svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+    <defs>
+      <symbol id="i-mark" viewBox="0 0 32 32"><path d="M16 1.5c1.1 9.3 5.2 13.4 14.5 14.5C21.2 17.1 17.1 21.2 16 30.5 14.9 21.2 10.8 17.1 1.5 16 10.8 14.9 14.9 10.8 16 1.5Z"/><ellipse cx="16" cy="16" rx="7.5" ry="7.5"/><path d="M5.5 5.5 26.5 26.5m0-21-21 21" opacity=".5"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h7m5 0h4M4 17h3m5 0h8"/><circle cx="13.5" cy="7" r="2.5"/><circle cx="9.5" cy="17" r="2.5"/></symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2.3 8M3 4v6h6"/></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14" stroke-width="2.6"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24"><path d="M8 5 6 8H3v12h18V8h-3l-2-3Z"/><circle cx="12" cy="13.5" r="3.5"/></symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><path d="M12 10v7m0-10h.01"/><circle cx="12" cy="12" r="9"/></symbol>
+      <symbol id="i-mouse" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></symbol>
+      <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M12 3v18m-4-4 4 4 4-4M8 7l4-4 4 4"/></symbol>
+      <symbol id="i-knot" viewBox="0 0 32 32"><path d="M16 8c-12-12-19 14-3 13 16-1 20-15 10-16C13 4 6 28 16 28S29 4 19 10C9 16 5 29 3 20 1 11 20 7 24 16c7 16-16 12-13 1S25 4 28 13c3 9-11 15-16 9"/></symbol>
+      <symbol id="i-icosa" viewBox="0 0 32 32"><path d="m16 2 12 7v14l-12 7-12-7V9Z M16 2l7 13-7 15-7-15Zm-12 7 5 6-5 8m24-14-5 6 5 8M9 15h14M4 9l12-7 12 7M4 23l12 7 12-7"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    </defs>
+  </svg>
+
+  <canvas id="scene" tabindex="0" aria-label="Interactive 3D sculpture. Drag to orbit. Scroll to zoom. Arrow keys rotate, plus and minus zoom."></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="header">
+    <div class="identity">
+      <div class="wordmark"><svg class="mark" aria-hidden="true"><use href="#i-mark"/></svg>AETHER</div>
+      <div class="experiment">A STUDY IN<br>LIGHT &amp; MOTION</div>
+    </div>
+    <div class="header-actions">
+      <div class="live"><span class="live-dot"></span>LIVE EXPERIMENT</div>
+      <button class="tune-button" id="tune" aria-expanded="false" aria-controls="controls"><svg aria-hidden="true"><use href="#i-sliders"/></svg>Tune scene</button>
+      <button class="icon-button" id="about" title="About this experiment" aria-label="About this experiment"><svg aria-hidden="true"><use href="#i-info"/></svg></button>
+      <button class="icon-button" id="fullscreen" title="Enter fullscreen" aria-label="Enter fullscreen"><svg aria-hidden="true"><use href="#i-expand"/></svg></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">A SPACE TO GET A LITTLE LOST</p>
+      <h1 id="page-title">Where light<br>finds its <em>form.</em></h1>
+      <p class="intro-copy">A small universe, shaped by you.</p>
+    </section>
+    <div class="vertical-note" aria-hidden="true">INFINITE FORMS. ONE MOMENT.</div>
+    <section class="specimen" aria-label="Current sculpture">
+      <div class="specimen-rule"></div>
+      <div class="specimen-index" id="object-index">OBJECT 01 / 02</div>
+      <h2 id="object-title">The torus knot</h2>
+      <p id="object-description">One curve. No beginning, no end.</p>
+    </section>
+
+    <aside class="panel" id="controls" aria-labelledby="controls-title">
+      <div class="panel-heading"><h2 id="controls-title">Scene controls</h2><svg aria-hidden="true"><use href="#i-sliders"/></svg></div>
+      <div class="section-label" id="geometry-label">GEOMETRY</div>
+      <div class="geometry-options" role="group" aria-labelledby="geometry-label">
+        <button class="geometry-button" data-shape="knot" aria-pressed="true"><svg aria-hidden="true"><use href="#i-knot"/></svg>Torus knot</button>
+        <button class="geometry-button" data-shape="icosa" aria-pressed="false"><svg aria-hidden="true"><use href="#i-icosa"/></svg>Icosahedron</button>
+      </div>
+      <div class="palette-section">
+        <div class="control-label"><span class="section-label" id="palette-label">COLOR PALETTE</span><span class="palette-name" id="palette-name">Aurora</span></div>
+        <div class="palette-options" role="group" aria-labelledby="palette-label">
+          <button class="swatch aurora" data-palette="aurora" title="Aurora" aria-label="Aurora palette" aria-pressed="true"></button>
+          <button class="swatch ember" data-palette="ember" title="Ember" aria-label="Ember palette" aria-pressed="false"></button>
+          <button class="swatch ocean" data-palette="ocean" title="Ocean" aria-label="Ocean palette" aria-pressed="false"></button>
+          <button class="swatch rose" data-palette="rose" title="Rose" aria-label="Rose palette" aria-pressed="false"></button>
+        </div>
+      </div>
+      <div class="panel-divider"></div>
+      <div class="slider-group"><div class="control-label"><label for="motion">Motion speed</label><output for="motion" id="motion-value">0.6×</output></div><input type="range" id="motion" min="0" max="2" step="0.1" value="0.6" aria-label="Motion speed"></div>
+      <div class="slider-group"><div class="control-label"><label for="glow">Glow intensity</label><output for="glow" id="glow-value">70%</output></div><input type="range" id="glow" min="0" max="1.5" step="0.05" value="0.7" style="--fill:46.67%" aria-label="Glow intensity"></div>
+      <div class="toggle-row"><label id="particles-label">Particle field</label><button class="switch" id="particles-toggle" role="switch" aria-labelledby="particles-label" aria-checked="true"></button></div>
+      <button class="reset-settings" id="reset-settings"><svg aria-hidden="true"><use href="#i-reset"/></svg>Reset settings</button>
+    </aside>
+    <div class="panel-footnote"><svg aria-hidden="true"><use href="#i-mark"/></svg>Made from geometry, not images.</div>
+
+    <div class="transport">
+      <div class="dock" role="group" aria-label="Scene actions">
+        <button id="pause" aria-label="Pause motion" aria-pressed="false"><svg aria-hidden="true"><use id="pause-icon" href="#i-pause"/></svg><span id="pause-label">Pause</span></button>
+        <div class="dock-separator"></div>
+        <button id="reset-view" title="Reset camera position"><svg aria-hidden="true"><use href="#i-reset"/></svg>Reset view</button>
+        <div class="dock-separator"></div>
+        <button id="save" title="Save the 3D scene as a PNG"><svg aria-hidden="true"><use href="#i-camera"/></svg>Save image</button>
+      </div>
+      <div class="hint" aria-hidden="true"><span><svg><use href="#i-mouse"/></svg>Drag to orbit</span><i class="dot"></i><span><svg><use href="#i-scroll"/></svg>Scroll to zoom</span></div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-left"><span class="live-dot"></span><span id="render-status">REALTIME RENDER</span></div>
+    <span class="footer-center">BUILT FROM MATH. MADE TO WANDER.</span>
+    <div class="footer-right"><span id="particle-count">10,240 particles</span><span><output id="fps">--</output> FPS</span></div>
+  </footer>
+
+  <div id="loading" role="status" aria-live="polite">
+    <svg class="loading-symbol" aria-hidden="true"><use href="#i-mark"/></svg>
+    <h2 id="loading-title">Loading…</h2>
+    <p id="loading-detail">Preparing light &amp; motion</p>
+    <button class="retry-button" id="retry" hidden>Try again</button>
+    <noscript><p>Enable JavaScript to explore this scene.</p></noscript>
+  </div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <dialog id="about-dialog" aria-labelledby="about-title">
+    <button class="icon-button" id="close-about" aria-label="Close about"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+    <p class="eyebrow">EXPERIMENT 001</p>
+    <h2 id="about-title">A study in light &amp; motion.</h2>
+    <p>Aether is a living sculpture made from math. Its surface bends light into shifting color, while 10,240 particles trace their own orbits.</p>
+    <p>No images. No models. Just geometry, shaders, and a moment to explore.</p>
+    <dl><dt>Orbit the camera</dt><dd>Drag / arrow keys</dd><dt>Move closer or farther</dt><dd>Scroll / + and −</dd><dt>Stop the animation</dt><dd>Pause</dd><dt>Return to the start</dt><dd>Reset view</dd></dl>
+  </dialog>
+
+  <script type="module">
+    const $ = (selector) => document.querySelector(selector);
+    const loading = $('#loading');
+    const canvas = $('#scene');
+    let cleanup = () => {};
+    let toastTimer;
+    const toast = (message) => {
+      $('#toast').textContent = message;
+      $('#toast').classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => $('#toast').classList.remove('visible'), 3000);
+    };
+    const fail = (message) => {
+      cleanup();
+      clearTimeout(loadTimer);
+      loading.classList.remove('finished');
+      $('#loading-title').textContent = 'The scene could not start';
+      $('#loading-detail').textContent = message;
+      $('#retry').hidden = false;
+      $('#render-status').textContent = 'RENDER UNAVAILABLE';
+    };
+    $('#retry').addEventListener('click', () => location.reload());
+    const loadTimer = setTimeout(() => {
+      $('#loading-detail').textContent = 'Still loading. Check your internet connection.';
+    }, 12000);
+
+    try {
+      // Dynamic imports keep CDN failures inside this catch, rather than leaving a blank screen.
+      const [THREE, { EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import('three'),
+        import('three/addons/postprocessing/EffectComposer.js'),
+        import('three/addons/postprocessing/RenderPass.js'),
+        import('three/addons/postprocessing/UnrealBloomPass.js'),
+        import('three/addons/postprocessing/OutputPass.js')
+      ]);
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+      // Retina rendering grows quadratically; never spend more than 2× device resolution.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.12;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(43, innerWidth / innerHeight, 0.1, 120);
+      const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const state = { shape: 'knot', palette: 'aurora', speed: 0.6, paused: reducedMotion, particles: true, time: 0 };
+      const palettes = {
+        aurora: ['#6bf5cb', '#a589ed', '#548ddd'],
+        ember: ['#ffe0a1', '#f66b4a', '#ce5286'],
+        ocean: ['#7ae8ef', '#497bdf', '#6573ed'],
+        rose: ['#ffd0c3', '#e37cac', '#9272e8']
+      };
+      const paletteTargets = palettes.aurora.map((color) => new THREE.Color(color));
+      const uniforms = {
+        uTime: { value: 0 },
+        uColorA: { value: paletteTargets[0].clone() },
+        uColorB: { value: paletteTargets[1].clone() },
+        uColorC: { value: paletteTargets[2].clone() }
+      };
+      const heroMaterial = new THREE.ShaderMaterial({
+        uniforms,
+        vertexShader: /* glsl */`
+          uniform float uTime;
+          varying vec3 vWorldPosition;
+          varying vec3 vNormal;
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            // Small normal displacement makes the surface breathe without changing topology.
+            float wave = sin(position.y * 3.5 + uTime * 0.8)
+                       * sin(position.x * 2.7 - uTime * 0.5);
+            vec3 p = position + normal * wave * 0.035;
+            p *= 1.0 + sin(uTime * 1.1) * 0.014;
+            vec4 world = modelMatrix * vec4(p, 1.0);
+            vWorldPosition = world.xyz;
+            vNormal = normalize(mat3(modelMatrix) * normal);
+            gl_Position = projectionMatrix * viewMatrix * world;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          uniform float uTime;
+          uniform vec3 uColorA;
+          uniform vec3 uColorB;
+          uniform vec3 uColorC;
+          varying vec3 vWorldPosition;
+          varying vec3 vNormal;
+          varying vec2 vUv;
+          void main() {
+            vec3 n = normalize(vNormal);
+            vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+            vec3 reflection = reflect(-viewDir, n);
+            float facing = max(dot(n, viewDir), 0.0);
+            float rim = pow(1.0 - facing, 2.8);
+            float t = uTime * 0.23;
+            float flow = sin(vUv.x * 18.85 + sin(vUv.y * 12.56 + t) * 0.6 - t);
+            float shift = 0.5 + 0.5 * sin(reflection.y * 3.8 + reflection.x * 2.5 + flow * 0.9 + t);
+            vec3 iridescence = mix(uColorA, uColorB, smoothstep(0.12, 0.88, shift));
+            iridescence = mix(iridescence, uColorC,
+              pow(0.5 + 0.5 * sin(reflection.z * 3.8 - flow * 0.7 + t * 0.6), 3.0) * 0.7);
+            // Procedural studio reflections replace an environment map or external textures.
+            float softbox = pow(max(dot(reflection, normalize(vec3(-0.65, 1.0, 1.0))), 0.0), 12.0);
+            float strip = pow(max(1.0 - abs(reflection.y * 0.85 + reflection.x * 0.42 - 0.32), 0.0), 26.0);
+            float backlight = pow(max(dot(reflection, normalize(vec3(1.0, -0.4, -0.5))), 0.0), 18.0);
+            float light = 0.21 + 0.47 * max(dot(n, normalize(vec3(-0.4, 0.8, 1.3))), 0.0);
+            // Fine contour lines reveal the knot's curvature. Derivatives keep them antialiased.
+            float bands = vUv.y * 95.0 + vUv.x * 6.0 + flow * 0.3;
+            float width = max(fwidth(bands), 0.025);
+            float filament = 1.0 - smoothstep(0.08, 0.08 + width, abs(fract(bands) - 0.5));
+            vec3 color = iridescence * light * (0.8 + filament * 0.25);
+            color += iridescence * strip * 1.15;
+            color += mix(iridescence, vec3(1.0), 0.68) * softbox * 1.55;
+            color += uColorA * backlight * 0.75;
+            // Values above 1 enter the bloom pass as HDR light, rather than flat white paint.
+            color += mix(iridescence, uColorA, 0.35) * rim * (1.15 + 0.24 * sin(uTime * 1.1));
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `
+      });
+      const makeGeometry = (shape) => shape === 'knot'
+        ? new THREE.TorusKnotGeometry(1.47, 0.48, 320, 64, 2, 3)
+        : new THREE.IcosahedronGeometry(2.15, 1);
+      const hero = new THREE.Mesh(makeGeometry('knot'), heroMaterial);
+      hero.rotation.set(0.24, -0.35, -0.28);
+      scene.add(hero);
+
+      // A shader-painted sky stays seamless while the camera moves. No image assets are used.
+      const sky = new THREE.Mesh(new THREE.SphereGeometry(65, 32, 16), new THREE.ShaderMaterial({
+        side: THREE.BackSide, depthWrite: false,
+        vertexShader: `varying vec3 vDirection; void main() { vDirection = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: `
+          varying vec3 vDirection;
+          void main() {
+            vec3 d = normalize(vDirection);
+            float teal = pow(max(dot(d, normalize(vec3(0.1, -0.15, -1.0))), 0.0), 9.0);
+            float violet = pow(max(dot(d, normalize(vec3(-0.4, 0.3, -1.0))), 0.0), 15.0);
+            vec3 c = vec3(0.0015, 0.0023, 0.0026);
+            c += vec3(0.002, 0.009, 0.007) * teal;
+            c += vec3(0.009, 0.003, 0.013) * violet;
+            gl_FragColor = vec4(c, 1.0);
+          }
+        `
+      }));
+      scene.add(sky);
+
+      const COUNT = 10240;
+      const ORBIT_COUNT = 8192;
+      const positions = new Float32Array(COUNT * 3);
+      const sizes = new Float32Array(COUNT);
+      const phases = new Float32Array(COUNT);
+      const kinds = new Float32Array(COUNT);
+      // Seeded randomness gives a composed starting scene and repeatable screenshots.
+      let seed = 71241;
+      const random = () => { seed = (Math.imul(1664525, seed) + 1013904223) >>> 0; return seed / 4294967296; };
+      for (let i = 0; i < COUNT; i++) {
+        const angle = random() * Math.PI * 2;
+        if (i < ORBIT_COUNT) {
+          const radius = 3.2 + Math.pow(random(), 1.55) * 8.7;
+          const spiral = angle + radius * 0.65;
+          positions[i * 3] = Math.cos(spiral) * radius;
+          positions[i * 3 + 1] = (random() - 0.5) * (0.28 + radius * 0.19);
+          positions[i * 3 + 2] = Math.sin(spiral) * radius;
+        } else {
+          const z = random() * 2 - 1;
+          const radius = 24 + random() * 30;
+          const spread = Math.sqrt(1 - z * z);
+          positions[i * 3] = Math.cos(angle) * spread * radius;
+          positions[i * 3 + 1] = z * radius;
+          positions[i * 3 + 2] = Math.sin(angle) * spread * radius;
+          kinds[i] = 1;
+        }
+        sizes[i] = 0.2 + Math.pow(random(), 3) * 1.65;
+        phases[i] = random() * Math.PI * 2;
+      }
+      const particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      particleGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+      particleGeometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+      particleGeometry.setAttribute('aKind', new THREE.BufferAttribute(kinds, 1));
+      const particleUniforms = {
+        uTime: uniforms.uTime, uColorA: uniforms.uColorA, uColorB: uniforms.uColorB,
+        uPixelRatio: { value: renderer.getPixelRatio() },
+        uMaxPointSize: { value: renderer.getContext().getParameter(renderer.getContext().ALIASED_POINT_SIZE_RANGE)[1] }
+      };
+      const particleMaterial = new THREE.ShaderMaterial({
+        uniforms: particleUniforms, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        vertexShader: /* glsl */`
+          uniform float uTime;
+          uniform float uPixelRatio;
+          uniform float uMaxPointSize;
+          attribute float aSize;
+          attribute float aPhase;
+          attribute float aKind;
+          varying float vAlpha;
+          varying float vColor;
+          void main() {
+            vec3 p = position;
+            float orbit = uTime * (0.04 + 0.12 / max(length(p.xz), 1.0)) * (1.0 - aKind);
+            p.xz = mat2(cos(orbit), -sin(orbit), sin(orbit), cos(orbit)) * p.xz;
+            p.y += sin(aPhase + uTime * 0.24) * 0.13 * (1.0 - aKind);
+            // Tilt the disk so the orbit has depth even in the initial front view.
+            float tilt = 0.28 * (1.0 - aKind);
+            p.yz = mat2(cos(tilt), -sin(tilt), sin(tilt), cos(tilt)) * p.yz;
+            float bank = -0.20 * (1.0 - aKind);
+            p.xy = mat2(cos(bank), -sin(bank), sin(bank), cos(bank)) * p.xy;
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            float depth = -mv.z;
+            float distanceToCamera = length(mv.xyz);
+            // Perspective size and near/far fades avoid giant foreground dots and hard clipping.
+            gl_PointSize = min(uMaxPointSize, clamp(aSize * 31.0 / max(depth, 1.0), 0.65, 4.5) * uPixelRatio);
+            float nearFade = smoothstep(1.0, 3.6, distanceToCamera);
+            float farFade = 1.0 - smoothstep(mix(15.0, 35.0, aKind), mix(30.0, 78.0, aKind), distanceToCamera);
+            vAlpha = nearFade * farFade * (0.28 + 0.30 * sin(aPhase + uTime * 0.35) * sin(aPhase + uTime * 0.35));
+            vAlpha *= step(0.1, depth);
+            vColor = 0.5 + 0.5 * sin(aPhase);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: /* glsl */`
+          uniform vec3 uColorA;
+          uniform vec3 uColorB;
+          varying float vAlpha;
+          varying float vColor;
+          void main() {
+            float r = length(gl_PointCoord - 0.5) * 2.0;
+            if (r > 1.0) discard;
+            float softDot = exp(-r * r * 4.0) * (1.0 - smoothstep(0.7, 1.0, r));
+            vec3 color = mix(uColorA, uColorB, vColor);
+            color = mix(color, vec3(0.8, 0.9, 0.85), 0.28);
+            gl_FragColor = vec4(color * 1.6, softDot * vAlpha);
+          }
+        `
+      });
+      // THREE.Points renders one gl.POINTS draw call, not thousands of individual meshes.
+      const particles = new THREE.Points(particleGeometry, particleMaterial);
+      particles.frustumCulled = false; // Positions orbit in the shader, outside a static CPU bounding box.
+      scene.add(particles);
+
+      const orbitLines = new THREE.Group();
+      for (let ring = 0; ring < 3; ring++) {
+        const points = [];
+        const r = 3.5 + ring * 1.02;
+        for (let i = 0; i < 256; i++) {
+          const a = i / 256 * Math.PI * 2;
+          points.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+        }
+        const line = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({ color: ring === 1 ? 0x577662 : 0x6c618b, transparent: true, opacity: 0.12, depthWrite: false }));
+        line.rotation.set(0.28 + ring * 0.025, 0, -0.2);
+        orbitLines.add(line);
+      }
+      scene.add(orbitLines);
+
+      const composer = new EffectComposer(renderer);
+      const renderPass = new RenderPass(scene, camera);
+      const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.75, 0.72);
+      const outputPass = new OutputPass();
+      // Bloom runs in linear HDR. OutputPass applies tone mapping and sRGB conversion only once.
+      composer.addPass(renderPass);
+      composer.addPass(bloom);
+      composer.addPass(outputPass);
+      let shaderFailed = false;
+      renderer.debug.onShaderError = (gl, program, vertexShader, fragmentShader) => {
+        shaderFailed = true;
+        console.error('Shader compilation failed:', gl.getProgramInfoLog(program), gl.getShaderInfoLog(vertexShader), gl.getShaderInfoLog(fragmentShader));
+      };
+
+      const defaults = () => ({ yaw: 0, pitch: 0.13, radius: innerWidth <= 760 ? 20.3 : 11.7 });
+      const orbit = defaults();
+      const target = { ...orbit };
+      const limits = { min: 6.3, max: 23, pitch: 1.3 };
+      const clamp = THREE.MathUtils.clamp;
+      const events = new AbortController();
+      const on = (element, name, handler, options = {}) => element.addEventListener(name, handler, { ...options, signal: events.signal });
+      let pointerId = null;
+      let previousX = 0;
+      let previousY = 0;
+      on(canvas, 'pointerdown', (event) => {
+        if (event.button !== 0 || pointerId !== null) return;
+        pointerId = event.pointerId;
+        previousX = event.clientX;
+        previousY = event.clientY;
+        canvas.setPointerCapture(pointerId);
+        canvas.classList.add('dragging');
+        canvas.focus({ preventScroll: true });
+      });
+      on(canvas, 'pointermove', (event) => {
+        if (event.pointerId !== pointerId) return;
+        // Only accumulated drag deltas steer the camera. Hovering never changes its target.
+        target.yaw -= (event.clientX - previousX) * 0.005;
+        target.pitch = clamp(target.pitch + (event.clientY - previousY) * 0.004, -limits.pitch, limits.pitch);
+        previousX = event.clientX;
+        previousY = event.clientY;
+      });
+      const releasePointer = () => {
+        if (pointerId !== null && canvas.hasPointerCapture(pointerId)) canvas.releasePointerCapture(pointerId);
+        pointerId = null;
+        canvas.classList.remove('dragging');
+      };
+      on(canvas, 'pointerup', releasePointer);
+      on(canvas, 'pointercancel', releasePointer);
+      on(canvas, 'lostpointercapture', releasePointer);
+      on(window, 'blur', releasePointer);
+      on(canvas, 'wheel', (event) => {
+        event.preventDefault(); // Non-passive wheel handling prevents document scroll and browser zoom.
+        const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? innerHeight : 1);
+        target.radius = clamp(target.radius * Math.exp(clamp(pixels, -180, 180) * 0.0012), limits.min, limits.max);
+      }, { passive: false });
+      // Keyboard equivalents make the canvas usable without dragging or a mouse wheel.
+      on(canvas, 'keydown', (event) => {
+        const actions = {
+          ArrowLeft: () => target.yaw += 0.13, ArrowRight: () => target.yaw -= 0.13,
+          ArrowUp: () => target.pitch = clamp(target.pitch + 0.1, -limits.pitch, limits.pitch),
+          ArrowDown: () => target.pitch = clamp(target.pitch - 0.1, -limits.pitch, limits.pitch),
+          '+': () => target.radius = clamp(target.radius - 0.7, limits.min, limits.max),
+          '=': () => target.radius = clamp(target.radius - 0.7, limits.min, limits.max),
+          '-': () => target.radius = clamp(target.radius + 0.7, limits.min, limits.max)
+        };
+        if (actions[event.key]) { event.preventDefault(); actions[event.key](); }
+      });
+
+      const setShape = (shape) => {
+        if (state.shape === shape) return;
+        const oldGeometry = hero.geometry;
+        hero.geometry = makeGeometry(shape);
+        oldGeometry.dispose(); // Repeated switching must release the previous GPU buffers.
+        state.shape = shape;
+        document.querySelectorAll('[data-shape]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.shape === shape)));
+        $('#object-index').textContent = shape === 'knot' ? 'OBJECT 01 / 02' : 'OBJECT 02 / 02';
+        $('#object-title').textContent = shape === 'knot' ? 'The torus knot' : 'The icosahedron';
+        $('#object-description').textContent = shape === 'knot' ? 'One curve. No beginning, no end.' : 'Many faces. A different kind of balance.';
+      };
+      const setPalette = (palette) => {
+        state.palette = palette;
+        palettes[palette].forEach((color, i) => paletteTargets[i].set(color));
+        document.querySelectorAll('[data-palette]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.palette === palette)));
+        $('#palette-name').textContent = palette[0].toUpperCase() + palette.slice(1);
+      };
+      const setPaused = (paused) => {
+        state.paused = paused;
+        $('#pause').setAttribute('aria-pressed', String(paused));
+        $('#pause').setAttribute('aria-label', paused ? 'Resume motion' : 'Pause motion');
+        $('#pause-label').textContent = paused ? 'Resume' : 'Pause';
+        $('#pause-icon').setAttribute('href', paused ? '#i-play' : '#i-pause');
+        $('#render-status').textContent = paused ? 'MOTION PAUSED' : 'REALTIME RENDER';
+      };
+      const updateSliders = () => {
+        state.speed = Number($('#motion').value);
+        bloom.strength = Number($('#glow').value);
+        $('#motion-value').textContent = `${state.speed.toFixed(1)}×`;
+        $('#glow-value').textContent = `${Math.round(bloom.strength * 100)}%`;
+        for (const id of ['motion', 'glow']) {
+          const input = $('#' + id);
+          input.style.setProperty('--fill', `${Number(input.value) / Number(input.max) * 100}%`);
+        }
+      };
+      const setParticles = (visible) => {
+        state.particles = visible;
+        particles.visible = visible;
+        orbitLines.visible = visible;
+        $('#particles-toggle').setAttribute('aria-checked', String(visible));
+        $('#particle-count').textContent = visible ? '10,240 particles' : 'Particles off';
+      };
+      const resetView = () => {
+        const home = defaults();
+        // Pick the nearest equivalent yaw so reset never spins through accumulated full turns.
+        home.yaw += Math.round(orbit.yaw / (Math.PI * 2)) * Math.PI * 2;
+        Object.assign(target, home);
+      };
+      document.querySelectorAll('[data-shape]').forEach((button) => on(button, 'click', () => setShape(button.dataset.shape)));
+      document.querySelectorAll('[data-palette]').forEach((button) => on(button, 'click', () => setPalette(button.dataset.palette)));
+      on($('#motion'), 'input', updateSliders);
+      on($('#glow'), 'input', updateSliders);
+      on($('#particles-toggle'), 'click', () => setParticles(!state.particles));
+      on($('#pause'), 'click', () => setPaused(!state.paused));
+      on($('#reset-view'), 'click', () => { resetView(); toast('View reset'); });
+      on($('#reset-settings'), 'click', () => {
+        setShape('knot'); setPalette('aurora'); setParticles(true); setPaused(reducedMotion);
+        $('#motion').value = '0.6'; $('#glow').value = '0.7'; updateSliders();
+        toast('Scene settings reset');
+      });
+      setPaused(state.paused);
+
+      on($('#tune'), 'click', () => {
+        const open = $('#controls').classList.toggle('open');
+        $('#tune').setAttribute('aria-expanded', String(open));
+      });
+      on(canvas, 'pointerdown', () => {
+        $('#controls').classList.remove('open');
+        $('#tune').setAttribute('aria-expanded', 'false');
+      });
+      on($('#about'), 'click', () => $('#about-dialog').showModal());
+      on($('#close-about'), 'click', () => $('#about-dialog').close());
+      on($('#about-dialog'), 'click', (event) => {
+        if (event.target !== $('#about-dialog')) return;
+        const box = event.target.getBoundingClientRect();
+        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) event.target.close();
+      });
+      if (!document.fullscreenEnabled) $('#fullscreen').hidden = true;
+      on($('#fullscreen'), 'click', async () => {
+        try {
+          if (document.fullscreenElement) await document.exitFullscreen();
+          else await document.documentElement.requestFullscreen();
+        } catch { toast('Fullscreen is not available in this browser.'); }
+      });
+      on(document, 'fullscreenchange', () => {
+        const label = document.fullscreenElement ? 'Exit fullscreen' : 'Enter fullscreen';
+        $('#fullscreen').setAttribute('aria-label', label); $('#fullscreen').title = label;
+      });
+      const blobURLs = new Set();
+      on($('#save'), 'click', () => {
+        // Render immediately before capture; preserveDrawingBuffer would cost memory every frame.
+        composer.render();
+        canvas.toBlob((blob) => {
+          if (!blob) { toast('Image could not be saved. Try again.'); return; }
+          const url = URL.createObjectURL(blob);
+          blobURLs.add(url);
+          const link = document.createElement('a');
+          link.href = url; link.download = `aether-${state.shape}-${state.palette}.png`;
+          document.body.append(link); link.click(); link.remove();
+          setTimeout(() => { URL.revokeObjectURL(url); blobURLs.delete(url); }, 10000);
+          toast('Image ready. Check your downloads.');
+        }, 'image/png');
+      });
+
+      let isMobile = innerWidth <= 760;
+      const resize = () => {
+        const width = innerWidth;
+        const height = innerHeight;
+        const mobile = width <= 760;
+        if (mobile !== isMobile) { isMobile = mobile; resetView(); }
+        camera.aspect = width / height;
+        // Keep the sculpture clear of the right-hand panel; on mobile give the title breathing room.
+        camera.setViewOffset(width, height, mobile ? 0 : width * 0.025, mobile ? -height * 0.035 : -height * 0.005, width, height);
+        camera.updateProjectionMatrix();
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(width, height);
+        composer.setPixelRatio(renderer.getPixelRatio());
+        composer.setSize(width, height);
+        particleUniforms.uPixelRatio.value = renderer.getPixelRatio();
+      };
+      on(window, 'resize', resize);
+      resize();
+
+      let frameId = 0;
+      let disposed = false;
+      let lastFrame = 0;
+      let firstFrame = true;
+      let fpsStart = performance.now();
+      let fpsFrames = 0;
+      const frameInterval = 1000 / 60;
+      const lookAt = new THREE.Vector3();
+      const animate = (now) => {
+        if (disposed || document.hidden) return;
+        frameId = requestAnimationFrame(animate);
+        const elapsed = now - lastFrame;
+        if (elapsed < frameInterval - 0.5) return; // Cap high-refresh displays at approximately 60 fps.
+        const dt = Math.min(elapsed / 1000, 0.05);
+        lastFrame = now;
+        // Exponential damping is frame-rate independent. The same drag feels alike at 30 and 60 fps.
+        const damping = 1 - Math.exp(-7.5 * dt);
+        orbit.yaw += (target.yaw - orbit.yaw) * damping;
+        orbit.pitch += (target.pitch - orbit.pitch) * damping;
+        orbit.radius += (target.radius - orbit.radius) * damping;
+        camera.position.set(
+          Math.sin(orbit.yaw) * Math.cos(orbit.pitch) * orbit.radius,
+          Math.sin(orbit.pitch) * orbit.radius,
+          Math.cos(orbit.yaw) * Math.cos(orbit.pitch) * orbit.radius
+        );
+        camera.lookAt(lookAt);
+        if (!state.paused) {
+          state.time += dt * state.speed;
+          hero.rotation.y += dt * state.speed * 0.095;
+          hero.rotation.z = -0.28 + Math.sin(state.time * 0.16) * 0.10;
+        }
+        uniforms.uTime.value = state.time;
+        [uniforms.uColorA, uniforms.uColorB, uniforms.uColorC].forEach((color, i) => color.value.lerp(paletteTargets[i], 1 - Math.exp(-5 * dt)));
+        try {
+          composer.render();
+          if (shaderFailed) throw new Error('shader');
+        } catch (error) {
+          console.error(error);
+          fail('Your graphics device could not render this scene. Enable hardware acceleration or try another browser.');
+          return;
+        }
+        if (firstFrame) {
+          firstFrame = false;
+          clearTimeout(loadTimer);
+          loading.classList.add('finished'); // Fade only after a successful frame has reached the canvas.
+          canvas.dataset.ready = 'true';
+        }
+        fpsFrames++;
+        if (now - fpsStart > 900) {
+          $('#fps').value = String(Math.round(fpsFrames * 1000 / (now - fpsStart)));
+          fpsFrames = 0; fpsStart = now;
+        }
+      };
+      const stop = () => { cancelAnimationFrame(frameId); frameId = 0; };
+      const start = () => {
+        stop(); lastFrame = performance.now() - frameInterval;
+        fpsStart = performance.now(); fpsFrames = 0;
+        if (!document.hidden && !disposed) frameId = requestAnimationFrame(animate);
+      };
+      // Hidden tabs do no rendering and do not jump forward by minutes when brought back.
+      on(document, 'visibilitychange', () => document.hidden ? stop() : start());
+      on(canvas, 'webglcontextlost', (event) => {
+        event.preventDefault();
+        fail('The graphics connection was interrupted. Close other graphics-heavy tabs, then try again.');
+      });
+      cleanup = () => {
+        if (disposed) return;
+        disposed = true; stop(); events.abort(); clearTimeout(toastTimer);
+        const geometries = new Set();
+        const materials = new Set();
+        scene.traverse((object) => {
+          if (object.geometry) geometries.add(object.geometry);
+          if (object.material) (Array.isArray(object.material) ? object.material : [object.material]).forEach((m) => materials.add(m));
+        });
+        geometries.forEach((geometry) => geometry.dispose());
+        materials.forEach((material) => material.dispose());
+        composer.passes.forEach((pass) => pass.dispose?.());
+        composer.dispose(); renderer.dispose();
+        blobURLs.forEach((url) => URL.revokeObjectURL(url));
+      };
+      // Preserve resources for back/forward cache restores; release them on an actual unload.
+      on(window, 'pagehide', (event) => event.persisted ? stop() : cleanup());
+      on(window, 'pageshow', start);
+      start();
+    } catch (error) {
+      console.error('Aether initialization failed:', error);
+      fail('Check your connection and WebGL support, then try again. This scene needs internet access to load Three.js.');
+    }
+  </script>
+</body>
+</html>
