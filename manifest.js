@@ -31,6 +31,10 @@ var BENCH_MANIFEST = {
       "bytes": 21456
     },
     {
+      "slug": "meituan-longcat-2.5",
+      "bytes": 14120
+    },
+    {
       "slug": "mimo-v2.6-flash",
       "bytes": 15173
     },

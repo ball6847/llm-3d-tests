@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Aurora Knot</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05030a; }
+  #scene { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  #scene.dragging { cursor: grabbing; }
+  #loader {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: #05030a; color: #cfd6ff;
+    font: 15px/1.4 system-ui, sans-serif; letter-spacing: .12em;
+    transition: opacity .9s ease;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+  #hint {
+    position: fixed; left: 0; right: 0; bottom: 18px; z-index: 5;
+    text-align: center; color: rgba(210, 214, 255, .55);
+    font: 12px system-ui, sans-serif; letter-spacing: .18em;
+    pointer-events: none; transition: opacity 1.2s ease;
+  }
+  #hint.hidden { opacity: 0; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="loader">Loading…</div>
+<div id="hint">drag to orbit · scroll to zoom</div>
+<canvas id="scene"></canvas>
+
+<!-- If the CDN fetch stalls, say so instead of spinning forever. -->
+<script>
+  window.__booted = false;
+  setTimeout(function () {
+    if (!window.__booted) {
+      var l = document.getElementById('loader');
+      if (l) l.textContent = 'Loading… (still fetching Three.js from the CDN, check your network)';
+    }
+  }, 8000);
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------------------------------------------------------------- config
+const PARTICLE_COUNT = 9000;
+const ZOOM_MIN = 6, ZOOM_MAX = 30;
+const YAW_SENS = 0.0052, PITCH_SENS = 0.0042; // separate horizontal/vertical feel
+const PITCH_LIMIT = 1.45;                      // keep the camera off the poles
+const DAMP_ROT = 6.5, DAMP_ZOOM = 5.0;         // damping rates (1/s)
+const FRAME_MS = 1000 / 60;                    // hard cap near 60fps on high-refresh panels
+
+const canvas = document.getElementById('scene');
+const loader = document.getElementById('loader');
+const hint = document.getElementById('hint');
+
+// ------------------------------------------------------------- renderer
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+} catch (err) {
+  loader.textContent = 'WebGL is not available in this browser.';
+  throw err;
+}
+// Cap pixel ratio: full DPR on Retina can mean 4x the fragments for no visible gain.
+const PIXEL_RATIO = Math.min(window.devicePixelRatio, 2);
+renderer.setPixelRatio(PIXEL_RATIO);
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05030a); // near-black so bloom reads as glow
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+
+// -------------------------------------------------- hero: torus knot
+// Procedural geometry, no assets. A (2,3) torus knot is the classic trefoil.
+const heroGeometry = new THREE.TorusKnotGeometry(1.6, 0.5, 320, 48, 2, 3);
+
+const heroVertexShader = /* glsl */`
+  uniform float uTime;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying vec3 vPos;
+  varying float vNoise;
+
+  // Cheap trig noise: no textures, deterministic, fast enough for ~15k verts.
+  float trigNoise(vec3 p, float t) {
+    return sin(p.x * 1.9 + t) * 0.5
+         + sin(p.y * 2.3 - t * 0.8) * 0.3
+         + sin(p.z * 2.7 + t * 0.6) * 0.2;
+  }
+
+  void main() {
+    vNoise = trigNoise(position, uTime * 0.9);
+    float pulse = 1.0 + 0.05 * sin(uTime * 1.7);       // breathing scale
+    vec3 displaced = position + normal * vNoise * 0.22 * pulse;
+    vPos = displaced;
+    vNormal = normalize(normalMatrix * normal);        // view-space normal
+    vec4 mv = modelViewMatrix * vec4(displaced, 1.0);
+    vViewDir = -mv.xyz;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const heroFragmentShader = /* glsl */`
+  uniform float uTime;
+  varying vec3 vNormal;
+  varying vec3 vViewDir;
+  varying vec3 vPos;
+  varying float vNoise;
+
+  // Cosine palette in the IQ style: smooth cyclic gradient, good for iridescent bands.
+  vec3 palette(float t) {
+    return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67)));
+  }
+
+  void main() {
+    vec3 N = normalize(vNormal);
+    vec3 V = normalize(vViewDir);
+    float fres = pow(1.0 - clamp(dot(N, V), 0.0, 1.0), 2.4);
+    float bands = vNoise * 1.4 - uTime * 0.11 + vPos.y * 0.22;
+    vec3 irid = palette(bands);
+    irid = mix(vec3(dot(irid, vec3(0.3333))), irid, 1.45); // saturation boost
+    vec3 deep = palette(bands + 0.45) * 0.10;            // dark base so rims pop
+    vec3 col = deep + irid * (0.45 + 0.75 * fres);
+    col += vec3(0.45, 0.85, 1.0) * pow(fres, 3.2) * 0.7;  // cyan rim light
+    col *= 1.05;                                        // mild highlight lift for bloom
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+const heroMaterial = new THREE.ShaderMaterial({
+  vertexShader: heroVertexShader,
+  fragmentShader: heroFragmentShader,
+  uniforms: { uTime: { value: 0 } },
+});
+
+const hero = new THREE.Mesh(heroGeometry, heroMaterial);
+scene.add(hero);
+
+// ------------------------------------------------------- particle field
+// One BufferGeometry + gl.POINTS: 9000 particles in a single draw call.
+function buildParticleGeometry(count) {
+  const geo = new THREE.BufferGeometry();
+  const pos = new Float32Array(count * 3);
+  const size = new Float32Array(count);
+  const seed = new Float32Array(count);
+  const speed = new Float32Array(count);
+  const offset = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    // Random direction on a sphere, biased into a shell around the hero.
+    const u = Math.random() * 2 - 1;
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.sqrt(1 - u * u);
+    const r = 2.8 + Math.pow(Math.random(), 0.7) * 5.2;
+    pos[i * 3] = s * Math.cos(a) * r;
+    pos[i * 3 + 1] = u * r * 0.7; // slightly flattened halo
+    pos[i * 3 + 2] = s * Math.sin(a) * r;
+    size[i] = 0.7 + Math.random() * 2.1;
+    seed[i] = Math.random();
+    speed[i] = (0.08 + Math.random() * 0.32) * (Math.random() < 0.5 ? -1 : 1);
+    offset[i] = Math.random() * Math.PI * 2;
+  }
+
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+  geo.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+  geo.setAttribute('aSpeed', new THREE.BufferAttribute(speed, 1));
+  geo.setAttribute('aOffset', new THREE.BufferAttribute(offset, 1));
+  return geo;
+}
+
+const particleVertexShader = /* glsl */`
+  attribute float aSize;
+  attribute float aSeed;
+  attribute float aSpeed;
+  attribute float aOffset;
+  uniform float uTime;
+  uniform float uPixelRatio;
+  uniform float uFadeNear;
+  uniform float uFadeFar;
+  varying float vAlpha;
+  varying float vSeed;
+
+  void main() {
+    // Orbit: rotate the base position around Y by a per-particle phase.
+    float ang = aOffset + uTime * aSpeed;
+    float c = cos(ang), s = sin(ang);
+    vec3 p = position;
+    p = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c);
+    p.y += sin(uTime * 0.6 + aSeed * 6.2831) * 0.15; // gentle bob
+
+    vec4 mv = modelViewMatrix * vec4(p, 1.0);
+    float dist = -mv.z;                              // view-space depth
+
+    // Size falls off with distance, perspective style, clamped so near points do not explode.
+    gl_PointSize = clamp(aSize * uPixelRatio * (30.0 / dist), 0.0, 32.0 * uPixelRatio);
+
+    // Depth fade: far particles dissolve, near ones stay crisp.
+    float fade = 1.0 - smoothstep(uFadeNear, uFadeFar, dist);
+    float twinkle = 0.75 + 0.25 * sin(uTime * (0.6 + aSeed * 1.7) + aSeed * 40.0);
+    vAlpha = fade * twinkle * (0.35 + 0.6 * aSeed);
+    vSeed = aSeed;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const particleFragmentShader = /* glsl */`
+  uniform float uTime;
+  varying float vAlpha;
+  varying float vSeed;
+
+  void main() {
+    // Soft round sprite from gl_PointCoord; no texture needed.
+    float d = length(gl_PointCoord - 0.5);
+    float a = smoothstep(0.5, 0.0, d);
+    a *= a;
+    vec3 col = mix(vec3(0.35, 0.75, 1.0), vec3(0.85, 0.45, 1.0), vSeed);
+    col += 0.25 * sin(uTime * 0.8 + vSeed * 12.0);
+    gl_FragColor = vec4(col, a * vAlpha);
+  }
+`;
+
+const particleGeometry = buildParticleGeometry(PARTICLE_COUNT);
+const particleMaterial = new THREE.ShaderMaterial({
+  vertexShader: particleVertexShader,
+  fragmentShader: particleFragmentShader,
+  uniforms: {
+    uTime: { value: 0 },
+    uPixelRatio: { value: PIXEL_RATIO },
+    uFadeNear: { value: 2.0 },
+    uFadeFar: { value: 20.0 },
+  },
+  transparent: true,
+  depthWrite: false,          // additive glow must not occlude itself
+  blending: THREE.AdditiveBlending,
+});
+
+const particles = new THREE.Points(particleGeometry, particleMaterial);
+scene.add(particles);
+
+// ------------------------------------------------------------- bloom
+// RenderPass draws the scene; UnrealBloomPass thresholds bright pixels and
+// blurs them into a halo; OutputPass applies tone mapping + sRGB last.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.65,  // strength
+  0.45,  // radius
+  0.72   // threshold: only the brightest hero/particle cores glow
+);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+composer.setPixelRatio(PIXEL_RATIO);
+
+// -------------------------------------------------------------- input
+// Drag deltas accumulate into *targets*; the render loop eases current
+// values toward them, so motion is smooth and never snaps.
+let yaw = 0.6, pitch = 0.35, radius = 14;
+let targetYaw = yaw, targetPitch = pitch, targetRadius = radius;
+let dragging = false, lastX = 0, lastY = 0;
+
+canvas.addEventListener('pointerdown', (e) => {
+  dragging = true;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  canvas.classList.add('dragging');
+  canvas.setPointerCapture(e.pointerId); // keep receiving moves outside the canvas
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!dragging) return;
+  const dx = e.clientX - lastX;
+  const dy = e.clientY - lastY;
+  lastX = e.clientX;
+  lastY = e.clientY;
+  targetYaw -= dx * YAW_SENS;
+  targetPitch -= dy * PITCH_SENS;
+  targetPitch = THREE.MathUtils.clamp(targetPitch, -PITCH_LIMIT, PITCH_LIMIT);
+});
+
+function endDrag() {
+  dragging = false;
+  canvas.classList.remove('dragging');
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', endDrag);
+
+// Wheel dollies the camera; passive:false is required so preventDefault works.
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  targetRadius += e.deltaY * 0.012;
+  targetRadius = THREE.MathUtils.clamp(targetRadius, ZOOM_MIN, ZOOM_MAX);
+}, { passive: false });
+
+// ------------------------------------------------------------- resize
+function onResize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const pr = Math.min(window.devicePixelRatio, 2);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setPixelRatio(pr);
+  renderer.setSize(w, h);
+  composer.setPixelRatio(pr);
+  composer.setSize(w, h); // also resizes the bloom pass
+  particleMaterial.uniforms.uPixelRatio.value = pr;
+}
+window.addEventListener('resize', onResize);
+
+// --------------------------------------------------------- teardown
+// Nothing is rebuilt here, but keep a proper dispose path so a future
+// rebuild does not leak GPU resources.
+function disposeObject(root) {
+  root.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach((m) => m.dispose());
+    }
+  });
+}
+window.addEventListener('beforeunload', () => {
+  disposeObject(scene);
+  composer.dispose();
+  renderer.dispose();
+});
+
+// --------------------------------------------------------- main loop
+let last = performance.now();
+let firstFrame = true;
+
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  const elapsed = now - last;
+  if (elapsed < FRAME_MS - 0.5) return;      // skip frames above ~60fps
+  last = now - (elapsed % FRAME_MS);         // carry the remainder, no drift
+  const dt = Math.min(elapsed / 1000, 0.05); // clamp: no jumps after a tab switch
+
+  // Gentle idle drift so the scene stays alive; pauses while dragging.
+  if (!dragging) targetYaw += dt * 0.04;
+
+  // Frame-rate independent exponential damping: same feel at 30 or 144Hz.
+  const kRot = 1 - Math.exp(-DAMP_ROT * dt);
+  const kZoom = 1 - Math.exp(-DAMP_ZOOM * dt);
+  yaw += (targetYaw - yaw) * kRot;
+  pitch += (targetPitch - pitch) * kRot;
+  radius += (targetRadius - radius) * kZoom;
+
+  // Spherical camera: yaw around Y, pitch from the pole, radius = dolly.
+  const sp = Math.sin(pitch);
+  camera.position.set(
+    radius * sp * Math.sin(yaw),
+    radius * Math.cos(pitch),
+    radius * sp * Math.cos(yaw)
+  );
+  camera.lookAt(0, 0, 0);
+
+  hero.rotation.y += dt * 0.15;
+  heroMaterial.uniforms.uTime.value += dt;
+  particleMaterial.uniforms.uTime.value += dt;
+
+  composer.render();
+
+  if (firstFrame) {
+    firstFrame = false;
+    window.__booted = true;
+    loader.classList.add('hidden'); // fade out once the first frame is on screen
+    setTimeout(() => loader.remove(), 1000);
+    setTimeout(() => hint.classList.add('hidden'), 6000);
+  }
+}
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
