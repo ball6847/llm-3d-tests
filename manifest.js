@@ -7,6 +7,10 @@ var BENCH_MANIFEST = {
       "bytes": 15469
     },
     {
+      "slug": "daisyrose-27b-q3",
+      "bytes": 15992
+    },
+    {
       "slug": "deepseek-v4-flash-1017",
       "bytes": 37431
     },

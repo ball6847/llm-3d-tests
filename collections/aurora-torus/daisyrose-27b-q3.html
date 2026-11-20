@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurora Knot</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #04050c;
+    }
+    canvas {
+      display: block;
+      touch-action: none; /* let pointer events own the drag, not browser scroll or zoom gestures */
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      background: #04050c;
+      color: #aab6e8;
+      font: 500 15px/1.4 system-ui, sans-serif;
+      letter-spacing: 0.14em;
+      transition: opacity 0.9s ease;
+    }
+    #overlay.hidden {
+      opacity: 0;
+      pointer-events: none; /* visually gone, but keep it in the DOM so clicks reach the canvas */
+    }
+    #hint {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(220, 228, 255, 0.35);
+      font: 400 12px/1.4 system-ui, sans-serif;
+      letter-spacing: 0.08em;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="overlay">Loading…</div>
+  <div id="hint">drag to orbit · scroll to zoom</div>
+
+  <script>
+    // Graceful fallback. This classic script runs before the module below,
+    // so a CDN failure (offline, blocked) turns into a message instead of
+    // "Loading…" sitting on screen forever.
+    window.addEventListener('error', function () {
+      if (!window.__sceneReady) {
+        var ov = document.getElementById('overlay');
+        if (ov) ov.textContent = 'Failed to load the 3D scene. Check your connection and reload.';
+      }
+    });
+    setTimeout(function () {
+      if (!window.__sceneReady) {
+        var ov = document.getElementById('overlay');
+        if (ov && ov.textContent === 'Loading…') ov.textContent = 'Still loading… slow connection?';
+      }
+    }, 20000);
+  </script>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    const overlay = document.getElementById('overlay');
+
+    // Renderer -------------------------------------------------------------
+    const scene = new THREE.Scene();
+    // Near-black background: bloom only reads as glow when there is almost
+    // nothing behind it to wash out against.
+    scene.background = new THREE.Color(0x04050c);
+
+    const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 100);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Cap DPR at 2. A 3x display would render 9x the pixels of CSS space for
+    // no visible gain, so this is the main guardrail against GPU overload.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    // Filmic rolloff for highlights. OutputPass applies it to the final buffer.
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    document.body.appendChild(renderer.domElement);
+
+    // Hero: torus knot with a custom aurora shader --------------------------
+    // One shared uTime uniform object drives both the hero and the particles,
+    // so a single .value update advances the whole scene.
+    const uniforms = { uTime: { value: 0 } };
+
+    const heroGeo = new THREE.TorusKnotGeometry(1.1, 0.34, 256, 40);
+    const heroMat = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader: `
+        uniform float uTime;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying float vWave;
+        void main() {
+          // Breathing: two overlapping sines push each vertex along its
+          // normal. Pure math, no textures, no CPU cost.
+          float wave = sin(position.x * 3.0 + uTime * 1.6)
+                     + cos(position.y * 3.0 - uTime * 1.2);
+          vec3 pos = position + normal * wave * 0.035;
+          vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+          vNormal = normalize(normalMatrix * normal);
+          vViewDir = normalize(-mv.xyz);
+          vWave = wave * 0.5 + 0.5;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        uniform float uTime;
+        varying vec3 vNormal;
+        varying vec3 vViewDir;
+        varying float vWave;
+        // IQ cosine palette: a continuous rainbow with no banding. t is the hue.
+        vec3 palette(float t) {
+          return 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.33, 0.67)));
+        }
+        void main() {
+          vec3 N = normalize(vNormal);
+          vec3 V = normalize(vViewDir);
+          // Fresnel: grazing angles brighten the rim. Those hot rim pixels
+          // are what UnrealBloomPass picks up, so the knot visibly glows.
+          float fresnel = pow(1.0 - abs(dot(N, V)), 2.2);
+          // Slow global breath plus the per-vertex wave = pulsating aurora.
+          float pulse = 0.5 + 0.5 * sin(uTime * 0.9);
+          float t = uTime * 0.06 + fresnel * 0.5 + vWave * 0.25;
+          vec3 base = mix(palette(t), palette(t + 0.35), pulse * 0.6 + fresnel * 0.4);
+          // The rim brightness exceeds 1.0, i.e. HDR-ish output, so the
+          // bloom threshold catches it while the darker core keeps its color.
+          vec3 color = base * (0.22 + fresnel * (0.9 + pulse * 0.7));
+          gl_FragColor = vec4(color, 1.0);
+        }`,
+    });
+    const hero = new THREE.Mesh(heroGeo, heroMat);
+    scene.add(hero);
+
+    // Particle field ---------------------------------------------------------
+    // One THREE.Points object is one gl.POINTS draw call, not thousands of
+    // meshes. Each particle carries its own orbit parameters as attributes,
+    // and the vertex shader derives the position from uTime, so 6000 orbits
+    // cost zero CPU per frame.
+    const COUNT = 6000;
+    const pGeo = new THREE.BufferGeometry();
+    const pPos = new Float32Array(COUNT * 3); // placeholder, shader computes real positions
+    const aRadius = new Float32Array(COUNT);
+    const aSpeed = new Float32Array(COUNT);
+    const aPhase = new Float32Array(COUNT);
+    const aY = new Float32Array(COUNT);
+    const aSize = new Float32Array(COUNT);
+    const aHue = new Float32Array(COUNT);
+
+    for (let i = 0; i < COUNT; i++) {
+      // pow < 1 skews the distribution toward the hero, so the disk is dense
+      // where it reads best.
+      aRadius[i] = 2.2 + Math.pow(Math.random(), 1.4) * 4.8;
+      // Inner particles orbit faster, like a galaxy's differential rotation.
+      aSpeed[i] = (0.55 / Math.sqrt(aRadius[i])) * (0.7 + Math.random() * 0.6);
+      aPhase[i] = Math.random() * Math.PI * 2;
+      // Vertical spread shrinks with radius, so the field reads as a disk.
+      aY[i] = (Math.random() - 0.5) * (1.6 - aRadius[i] * 0.12);
+      aSize[i] = 0.6 + Math.random() * 1.6;
+      aHue[i] = Math.random();
+    }
+
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeo.setAttribute('aRadius', new THREE.BufferAttribute(aRadius, 1));
+    pGeo.setAttribute('aSpeed', new THREE.BufferAttribute(aSpeed, 1));
+    pGeo.setAttribute('aPhase', new THREE.BufferAttribute(aPhase, 1));
+    pGeo.setAttribute('aY', new THREE.BufferAttribute(aY, 1));
+    pGeo.setAttribute('aSize', new THREE.BufferAttribute(aSize, 1));
+    pGeo.setAttribute('aHue', new THREE.BufferAttribute(aHue, 1));
+
+    const pMat = new THREE.ShaderMaterial({
+      uniforms, // shares the hero's uTime object
+      transparent: true,
+      depthWrite: false, // additive points must not occlude each other
+      blending: THREE.AdditiveBlending, // overlapping points brighten, which is the glow
+      vertexShader: `
+        uniform float uTime;
+        attribute float aRadius;
+        attribute float aSpeed;
+        attribute float aPhase;
+        attribute float aY;
+        attribute float aSize;
+        attribute float aHue;
+        varying float vAlpha;
+        varying float vHue;
+        void main() {
+          float angle = aPhase + uTime * aSpeed;
+          vec3 pos = vec3(
+            cos(angle) * aRadius,
+            aY + sin(uTime * 0.6 + aPhase * 3.0) * 0.12, // gentle vertical bob
+            sin(angle) * aRadius
+          );
+          vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+          float dist = length(mv.xyz); // camera-space distance = depth
+          // Depth-based fade: near particles are bright, far ones fade out.
+          vAlpha = 1.0 - smoothstep(4.0, 20.0, dist);
+          vHue = aHue;
+          // Perspective attenuation: size falls off with distance.
+          gl_PointSize = clamp(aSize * (26.0 / dist), 1.0, 22.0);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: `
+        varying float vAlpha;
+        varying float vHue;
+        vec3 palette(float t) {
+          return 0.5 + 0.5 * cos(6.2831853 * (t + vec3(0.0, 0.33, 0.67)));
+        }
+        void main() {
+          // Soft round sprite from gl_PointCoord. Procedural, no texture.
+          float d = length(gl_PointCoord - 0.5);
+          float mask = smoothstep(0.5, 0.12, d);
+          gl_FragColor = vec4(palette(vHue * 0.6 + 0.55), mask * vAlpha * 0.85);
+        }`,
+    });
+    const points = new THREE.Points(pGeo, pMat);
+    // Positions live in the shader, so the CPU-side bounding sphere (radius 0
+    // at the origin) would wrongly cull the whole cloud.
+    points.frustumCulled = false;
+    scene.add(points);
+
+    // Post-processing: scene -> bloom -> output ------------------------------
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(innerWidth, innerHeight),
+      1.0,  // strength
+      0.5,  // radius, how far the glow spreads
+      0.7,  // threshold, only pixels brighter than this bloom
+    );
+    composer.addPass(bloomPass);
+    // OutputPass applies tone mapping and the sRGB conversion. Without it the
+    // composer's linear buffer goes straight to screen and looks washed out.
+    composer.addPass(new OutputPass());
+
+    // Camera control: drag to orbit, wheel to dolly ---------------------------
+    // We integrate pointer deltas into target angles instead of mapping the
+    // raw cursor position to angles. The view only moves while the button is
+    // down, and it eases toward the target instead of snapping.
+    let targetYaw = 0.6, targetPitch = 0.28;
+    let yaw = targetYaw, pitch = targetPitch;
+    const PITCH_MIN = -1.35, PITCH_MAX = 1.35; // stop short of the poles
+    let targetRadius = 8.5, radius = 8.5;
+    const R_MIN = 3.5, R_MAX = 22;
+    const YAW_SENS = 0.0052;   // radians per CSS pixel, horizontal
+    const PITCH_SENS = 0.0038; // radians per CSS pixel, vertical
+
+    const el = renderer.domElement;
+    let dragging = false, lastX = 0, lastY = 0;
+
+    el.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      // Keep receiving moves even if the cursor leaves the canvas mid-drag.
+      // try/catch because synthetic or stale pointer ids throw.
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* drag state is already set */ }
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      targetYaw -= dx * YAW_SENS;
+      targetPitch += dy * PITCH_SENS;
+      targetPitch = Math.max(PITCH_MIN, Math.min(PITCH_MAX, targetPitch));
+    });
+    const endDrag = () => { dragging = false; };
+    el.addEventListener('pointerup', endDrag);
+    el.addEventListener('pointercancel', endDrag);
+    el.addEventListener('lostpointercapture', endDrag);
+
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault(); // stop the page from scrolling under the canvas
+      // Exponential dolly: each wheel notch scales the radius, so zoom speed
+      // feels constant near and far. A linear step would crawl at distance.
+      targetRadius = Math.max(R_MIN, Math.min(R_MAX, targetRadius * Math.exp(e.deltaY * 0.0011)));
+    }, { passive: false }); // passive:false is required for preventDefault to work
+
+    // Resize -------------------------------------------------------------------
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix(); // aspect lives in the projection matrix
+      // Re-check DPR in case the window moved to a monitor with a different one.
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      // The composer owns its own render targets, so it must be resized too.
+      composer.setSize(innerWidth, innerHeight);
+    });
+
+    // Cleanup --------------------------------------------------------------------
+    // If any geometry or material is ever rebuilt at runtime, call this on
+    // the old object first so its GPU buffers are released instead of leaking.
+    function disposeObject(obj) {
+      if (obj.geometry) obj.geometry.dispose();
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) {
+        if (!m) continue;
+        for (const key of Object.keys(m)) {
+          const v = m[key];
+          if (v && v.isTexture) v.dispose();
+        }
+        m.dispose();
+      }
+    }
+    window.addEventListener('pagehide', () => {
+      disposeObject(hero);
+      disposeObject(points);
+      if (typeof composer.dispose === 'function') composer.dispose();
+      renderer.dispose();
+    }, { once: true });
+
+    // Animation loop, capped at about 60fps ---------------------------------------
+    const clock = new THREE.Clock();
+    const FRAME_MS = 1000 / 60;
+    let lastFrame = 0;
+    let firstFrame = true;
+
+    function animate(time) {
+      requestAnimationFrame(animate);
+      // On 120/144Hz displays rAF fires faster than 60 times a second.
+      // Skipping frames keeps GPU load and battery use down without changing
+      // the look.
+      if (time - lastFrame < FRAME_MS) return;
+      lastFrame = time - ((time - lastFrame) % FRAME_MS);
+
+      // Clamp dt: after a tab switch the delta can be several seconds, and an
+      // unclamped delta would teleport the damped camera.
+      const dt = Math.min(clock.getDelta(), 0.1);
+      uniforms.uTime.value += dt;
+      hero.rotation.y += dt * 0.15; // slow idle spin
+      points.rotation.y += dt * 0.02; // slow precession of the whole disk
+
+      // Frame-rate independent damping: k = 1 - exp(-lambda * dt) gives the
+      // same feel at 60, 120 or 30 fps. A fixed lerp factor would respond
+      // faster on high-refresh displays.
+      const kRot = 1 - Math.exp(-8 * dt);
+      const kZoom = 1 - Math.exp(-6 * dt);
+      yaw += (targetYaw - yaw) * kRot;
+      pitch += (targetPitch - pitch) * kRot;
+      radius += (targetRadius - radius) * kZoom;
+
+      camera.position.set(
+        radius * Math.cos(pitch) * Math.sin(yaw),
+        radius * Math.sin(pitch),
+        radius * Math.cos(pitch) * Math.cos(yaw),
+      );
+      camera.lookAt(0, 0, 0);
+
+      composer.render();
+
+      if (firstFrame) {
+        firstFrame = false;
+        window.__sceneReady = true;
+        // Fade the overlay only after a real frame is on screen.
+        overlay.classList.add('hidden');
+      }
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
