@@ -23,6 +23,10 @@ var BENCH_MANIFEST = {
       "bytes": 12360
     },
     {
+      "slug": "inkling-2-mini-xhigh",
+      "bytes": 15370
+    },
+    {
       "slug": "inkling-2-small",
       "bytes": 21456
     },
