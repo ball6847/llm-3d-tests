@@ -7,6 +7,10 @@ var BENCH_MANIFEST = {
       "bytes": 15469
     },
     {
+      "slug": "alibaba-qwen-3.8-27b-high",
+      "bytes": 15965
+    },
+    {
       "slug": "daisyrose-27b-q3",
       "bytes": 15992
     },
