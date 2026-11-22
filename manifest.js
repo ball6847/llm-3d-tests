@@ -87,6 +87,10 @@ var BENCH_MANIFEST = {
       "bytes": 14592
     },
     {
+      "slug": "qwen-3.8-flash-xhigh",
+      "bytes": 31379
+    },
+    {
       "slug": "tencent-hy4",
       "bytes": 25986
     },
