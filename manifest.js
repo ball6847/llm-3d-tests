@@ -27,6 +27,10 @@ var BENCH_MANIFEST = {
       "bytes": 12360
     },
     {
+      "slug": "glm-5.4-max",
+      "bytes": 25939
+    },
+    {
       "slug": "inkling-2-mini-xhigh",
       "bytes": 15370
     },
