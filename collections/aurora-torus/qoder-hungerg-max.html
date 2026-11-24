@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#03040a">
+  <title>Aurora Knot — Generative Light Study</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f4f7ff;
+      --muted: rgba(220, 230, 255, 0.56);
+      --line: rgba(210, 225, 255, 0.14);
+      --cyan: #78f7ff;
+      --violet: #a78bfa;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #03040a;
+    }
+
+    body {
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button { font: inherit; }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      isolation: isolate;
+    }
+
+    #stage canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      touch-action: none;
+      opacity: 0;
+      transition: opacity 1.1s ease;
+      outline: none;
+    }
+
+    #stage canvas:focus-visible {
+      outline: 1px solid rgba(120, 247, 255, 0.65);
+      outline-offset: -5px;
+    }
+
+    body.is-ready #stage canvas { opacity: 1; }
+    body.is-dragging #stage canvas { cursor: grabbing; }
+
+    .atmosphere {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 48%, transparent 24%, rgba(3, 4, 10, 0.18) 57%, rgba(3, 4, 10, 0.86) 100%),
+        linear-gradient(115deg, rgba(74, 36, 140, 0.06), transparent 42%, rgba(16, 119, 138, 0.04));
+    }
+
+    .hud {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      padding: clamp(22px, 3.2vw, 52px);
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.9s ease 0.15s, transform 0.9s ease 0.15s;
+    }
+
+    body.is-ready .hud { opacity: 1; transform: none; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 11px;
+      font-weight: 650;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+    }
+
+    .brand-mark {
+      width: 25px;
+      height: 25px;
+      border: 1px solid rgba(255, 255, 255, 0.38);
+      border-radius: 50%;
+      background: conic-gradient(from 40deg, var(--cyan), var(--violet), var(--cyan));
+      box-shadow: 0 0 24px rgba(120, 247, 255, 0.16);
+      position: relative;
+    }
+
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      inset: 6px;
+      border-radius: 50%;
+      background: #03040a;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .live-status {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: 0.17em;
+      text-transform: uppercase;
+    }
+
+    .live-status::before {
+      content: "";
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 12px var(--cyan);
+      animation: breathe 2.8s ease-in-out infinite;
+    }
+
+    .intro {
+      position: absolute;
+      top: 50%;
+      left: clamp(22px, 3.2vw, 52px);
+      width: min(330px, 29vw);
+      transform: translateY(-46%);
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--cyan);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(42px, 5.5vw, 82px);
+      font-weight: 280;
+      letter-spacing: -0.065em;
+      line-height: 0.91;
+    }
+
+    h1 span {
+      color: transparent;
+      background: linear-gradient(105deg, #f4f7ff 8%, #9ff8ff 48%, #b9a1ff 92%);
+      -webkit-background-clip: text;
+      background-clip: text;
+    }
+
+    .intro-copy {
+      max-width: 245px;
+      margin: 24px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 350;
+      line-height: 1.75;
+    }
+
+    .index-rail {
+      position: absolute;
+      top: 50%;
+      right: clamp(22px, 3.2vw, 52px);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transform: translateY(-50%) rotate(90deg) translateX(50%);
+      transform-origin: right center;
+      color: rgba(220, 230, 255, 0.35);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 8px;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .index-rail::before {
+      content: "";
+      width: 54px;
+      height: 1px;
+      background: var(--line);
+    }
+
+    .bottom-bar {
+      position: absolute;
+      right: clamp(22px, 3.2vw, 52px);
+      bottom: clamp(22px, 3.2vw, 52px);
+      left: clamp(22px, 3.2vw, 52px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .instructions {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .instruction { display: flex; align-items: center; gap: 9px; }
+
+    .mouse-icon {
+      width: 14px;
+      height: 20px;
+      border: 1px solid rgba(220, 230, 255, 0.45);
+      border-radius: 8px;
+      position: relative;
+    }
+
+    .mouse-icon::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      width: 2px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--cyan);
+      transform: translateX(-50%);
+    }
+
+    .scroll-icon {
+      width: 15px;
+      height: 15px;
+      border: 1px solid rgba(220, 230, 255, 0.4);
+      border-radius: 50%;
+      position: relative;
+    }
+
+    .scroll-icon::before,
+    .scroll-icon::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      width: 4px;
+      height: 4px;
+      border-top: 1px solid var(--cyan);
+      border-left: 1px solid var(--cyan);
+      transform: translateX(-50%) rotate(45deg);
+    }
+
+    .scroll-icon::before { top: 3px; }
+    .scroll-icon::after { bottom: 2px; transform: translateX(-50%) rotate(225deg); }
+
+    .reset-button {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0 10px 14px;
+      color: rgba(235, 242, 255, 0.72);
+      border: 0;
+      background: transparent;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 9px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: color 0.2s ease;
+    }
+
+    .reset-button:hover, .reset-button:focus-visible { color: var(--cyan); }
+    .reset-button:focus-visible { outline: 1px solid rgba(120, 247, 255, 0.5); outline-offset: 5px; }
+
+    .reset-button svg { width: 14px; height: 14px; transition: transform 0.45s ease; }
+    .reset-button:hover svg { transform: rotate(-45deg); }
+
+    .loading-screen,
+    .error-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      background: #03040a;
+      transition: opacity 0.8s ease, visibility 0.8s ease;
+    }
+
+    .loading-screen.is-hidden { opacity: 0; visibility: hidden; }
+
+    .loading-content { display: grid; justify-items: center; gap: 22px; }
+
+    .loader {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-top-color: var(--cyan);
+      border-right-color: var(--violet);
+      box-shadow: 0 0 30px rgba(120, 247, 255, 0.08);
+      animation: spin 1.2s linear infinite;
+    }
+
+    .loading-label {
+      color: rgba(230, 238, 255, 0.62);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 10px;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+    }
+
+    .error-screen { padding: 28px; text-align: center; }
+    .error-card { max-width: 420px; }
+    .error-card h2 { margin: 0 0 12px; font-size: 24px; font-weight: 400; }
+    .error-card p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .error-card button {
+      margin-top: 24px;
+      padding: 11px 18px;
+      color: var(--ink);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      cursor: pointer;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes breathe { 50% { opacity: 0.35; box-shadow: 0 0 5px var(--cyan); } }
+
+    @media (max-width: 760px) {
+      .intro { top: 128px; width: auto; transform: none; }
+      h1 { font-size: clamp(38px, 11vw, 58px); }
+      .intro-copy { display: none; }
+      .eyebrow { margin-bottom: 12px; }
+      .index-rail { display: none; }
+      .live-status { font-size: 8px; letter-spacing: 0.1em; }
+      .instructions { gap: 14px; font-size: 8px; letter-spacing: 0.06em; }
+      .bottom-bar { align-items: center; }
+      .reset-button { font-size: 8px; }
+    }
+
+    @media (max-width: 430px) {
+      .brand { font-size: 9px; letter-spacing: 0.18em; }
+      .live-status span { display: none; }
+      .instruction:last-child { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .live-status::before, .loader { animation-duration: 4s; }
+      #stage canvas, .hud, .loading-screen { transition-duration: 0.01ms; }
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="stage" aria-label="Interactive three-dimensional aurora torus knot"></div>
+  <div class="atmosphere" aria-hidden="true"></div>
+
+  <div class="hud">
+    <div class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Form / 001</div>
+      <div class="live-status"><span>Realtime generative study</span></div>
+    </div>
+
+    <div class="intro">
+      <p class="eyebrow">Light · Matter · Motion</p>
+      <h1>Aurora<br><span>Knot.</span></h1>
+      <p class="intro-copy">A living sculpture shaped by light. Drag to change your perspective and scroll to move through its orbit.</p>
+    </div>
+
+    <div class="index-rail" aria-hidden="true">Procedural sculpture — 2026</div>
+
+    <div class="bottom-bar">
+      <div class="instructions" aria-label="Interaction instructions">
+        <div class="instruction"><span class="mouse-icon" aria-hidden="true"></span>Drag to orbit</div>
+        <div class="instruction"><span class="scroll-icon" aria-hidden="true"></span>Scroll to zoom</div>
+      </div>
+      <button class="reset-button" id="reset-view" type="button" aria-label="Reset camera view">
+        Reset view
+        <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3 6a5.2 5.2 0 1 1-.1 4M3 2.5V6h3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="loading-screen" id="loading" role="status" aria-live="polite">
+    <div class="loading-content">
+      <span class="loader" aria-hidden="true"></span>
+      <span class="loading-label">Loading…</span>
+    </div>
+  </div>
+
+  <div class="error-screen" id="error" hidden>
+    <div class="error-card">
+      <h2>The scene couldn’t start.</h2>
+      <p id="error-message">Please use a modern browser with WebGL enabled and check your internet connection.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </div>
+  </div>
+
+  <noscript>
+    <div style="position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:#03040a;color:#fff;font:14px system-ui;">JavaScript is required to render this scene.</div>
+  </noscript>
+
+  <script type="module">
+    const loading = document.getElementById('loading');
+    const errorPanel = document.getElementById('error');
+    const errorMessage = document.getElementById('error-message');
+
+    function showError(message) {
+      loading.hidden = true;
+      errorMessage.textContent = message;
+      errorPanel.hidden = false;
+    }
+
+    async function start() {
+      // Dynamic imports let a failed CDN request fall back to a readable error instead of a blank page.
+      const THREE = await import('three');
+      const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { OutputPass }] = await Promise.all([
+        import('three/addons/postprocessing/EffectComposer.js'),
+        import('three/addons/postprocessing/RenderPass.js'),
+        import('three/addons/postprocessing/UnrealBloomPass.js'),
+        import('three/addons/postprocessing/OutputPass.js')
+      ]);
+
+      const stage = document.getElementById('stage');
+      const resetButton = document.getElementById('reset-view');
+      const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setClearColor(0x03040a, 1);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      renderer.domElement.tabIndex = 0;
+      renderer.domElement.setAttribute('role', 'img');
+      renderer.domElement.setAttribute('aria-label', 'A glowing iridescent torus knot surrounded by orbiting particles. Drag to orbit, scroll to zoom, or use arrow keys.');
+      stage.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(43, 1, 0.1, 80);
+      const composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+
+      // HDR shader colors above the bloom threshold become the hero's soft emissive glow.
+      const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.55, 0.72);
+      composer.addPass(bloom);
+      composer.addPass(new OutputPass());
+
+      const heroUniforms = { uTime: { value: 0 } };
+      const heroMaterial = new THREE.ShaderMaterial({
+        uniforms: heroUniforms,
+        vertexShader: `
+          uniform float uTime;
+          varying vec3 vWorldPosition;
+          varying vec3 vWorldNormal;
+          varying vec2 vUv;
+
+          void main() {
+            // Small normal-direction waves give the silhouette a slow, organic pulse.
+            float wave = sin(position.x * 3.4 + uTime * 1.15)
+                       * sin(position.y * 3.8 - uTime * 0.82) * 0.052
+                       + sin((position.z + position.x) * 5.2 + uTime * 1.6) * 0.018;
+            vec3 displaced = position + normal * wave;
+            vec4 world = modelMatrix * vec4(displaced, 1.0);
+            vWorldPosition = world.xyz;
+            vWorldNormal = normalize(mat3(modelMatrix) * normal);
+            vUv = uv;
+            gl_Position = projectionMatrix * viewMatrix * world;
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec3 vWorldPosition;
+          varying vec3 vWorldNormal;
+          varying vec2 vUv;
+
+          void main() {
+            vec3 normal = normalize(vWorldNormal);
+            vec3 viewDir = normalize(cameraPosition - vWorldPosition);
+            float facing = max(dot(normal, viewDir), 0.0);
+            float fresnel = pow(1.0 - facing, 2.35);
+
+            // Layered sine palettes produce a continuous aurora shift without texture assets.
+            float flow = vWorldPosition.y * 1.45
+                       + sin(vWorldPosition.x * 1.7 + uTime * 0.31) * 0.72
+                       + sin(vWorldPosition.z * 2.25 - uTime * 0.23) * 0.48;
+            float band = 0.5 + 0.5 * sin(flow * 5.4 + uTime * 0.68 + fresnel * 3.0);
+            float fineBand = 0.5 + 0.5 * sin(flow * 13.0 - uTime * 0.42 + vUv.x * 6.2831);
+
+            vec3 deep = vec3(0.055, 0.018, 0.19);
+            vec3 violet = vec3(0.48, 0.12, 1.15);
+            vec3 cyan = vec3(0.04, 0.92, 1.18);
+            vec3 mint = vec3(0.28, 1.32, 0.72);
+            vec3 color = mix(deep, violet, smoothstep(0.05, 0.8, band));
+            color = mix(color, cyan, smoothstep(0.42, 0.98, fineBand));
+            color = mix(color, mint, smoothstep(0.7, 1.0, band) * 0.38);
+
+            vec3 lightA = normalize(vec3(-0.6, 0.9, 0.7));
+            vec3 lightB = normalize(vec3(0.8, -0.25, 0.55));
+            float diffuse = max(dot(normal, lightA), 0.0) * 0.72
+                          + max(dot(normal, lightB), 0.0) * 0.28;
+            float specular = pow(max(dot(reflect(-lightA, normal), viewDir), 0.0), 46.0);
+
+            color *= 0.56 + diffuse * 0.92;
+            color += fresnel * vec3(0.12, 0.82, 1.28) * 1.55;
+            color += specular * vec3(0.75, 1.15, 1.5) * 2.1;
+            color += pow(fineBand, 9.0) * vec3(0.08, 0.38, 0.52);
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `
+      });
+
+      const hero = new THREE.Mesh(new THREE.TorusKnotGeometry(1.42, 0.43, 320, 56, 2, 3), heroMaterial);
+      scene.add(hero);
+
+      const haloMaterial = new THREE.ShaderMaterial({
+        uniforms: { uTime: heroUniforms.uTime },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec2 vUv;
+          void main() {
+            float radius = length(vUv - 0.5) * 2.0;
+            float pulse = 0.88 + sin(uTime * 0.7) * 0.12;
+            float glow = exp(-radius * radius * 5.5) * pulse;
+            float haze = exp(-radius * radius * 2.0) * 0.12;
+            vec3 color = mix(vec3(0.18, 0.32, 1.0), vec3(0.05, 0.85, 1.0), vUv.y);
+            gl_FragColor = vec4(color, glow * 0.16 + haze);
+          }
+        `
+      });
+      const halo = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), haloMaterial);
+      halo.renderOrder = -2;
+      scene.add(halo);
+
+      const orbitGroup = new THREE.Group();
+      scene.add(orbitGroup);
+      const orbitLines = [];
+
+      function addOrbit(radius, tiltX, tiltZ, opacity) {
+        const points = [];
+        for (let i = 0; i < 256; i++) {
+          const angle = i / 256 * Math.PI * 2;
+          points.push(new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({
+          color: 0x75d9ff,
+          transparent: true,
+          opacity,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const line = new THREE.LineLoop(geometry, material);
+        line.rotation.set(tiltX, 0, tiltZ);
+        orbitGroup.add(line);
+        orbitLines.push(line);
+      }
+
+      addOrbit(2.75, 0.48, 0.22, 0.16);
+      addOrbit(3.45, -0.68, -0.36, 0.09);
+      addOrbit(4.35, 0.22, 0.92, 0.055);
+
+      function seededRandom(seed) {
+        return function () {
+          seed |= 0;
+          seed = seed + 0x6D2B79F5 | 0;
+          let value = Math.imul(seed ^ seed >>> 15, 1 | seed);
+          value = value + Math.imul(value ^ value >>> 7, 61 | value) ^ value;
+          return ((value ^ value >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      const random = seededRandom(1701);
+      const particleCount = window.innerWidth < 760 ? 8000 : 16000;
+      const positions = new Float32Array(particleCount * 3);
+      const sizes = new Float32Array(particleCount);
+      const phases = new Float32Array(particleCount);
+      const speeds = new Float32Array(particleCount);
+
+      for (let i = 0; i < particleCount; i++) {
+        const radius = 2.15 + Math.pow(random(), 0.72) * 4.25;
+        const theta = random() * Math.PI * 2;
+        const vertical = (random() * 2 - 1) * 0.62;
+        positions[i * 3] = Math.cos(theta) * radius;
+        positions[i * 3 + 1] = vertical * radius;
+        positions[i * 3 + 2] = Math.sin(theta) * radius;
+        sizes[i] = 0.55 + random() * 1.25;
+        phases[i] = random() * Math.PI * 2;
+        speeds[i] = (0.035 + random() * 0.075) * (random() > 0.18 ? 1 : -1);
+      }
+
+      const particleGeometry = new THREE.BufferGeometry();
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      particleGeometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+      particleGeometry.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+      particleGeometry.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+
+      const particleMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: heroUniforms.uTime,
+          uPixelRatio: { value: 1 }
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: `
+          uniform float uTime;
+          uniform float uPixelRatio;
+          attribute float aSize;
+          attribute float aPhase;
+          attribute float aSpeed;
+          varying float vAlpha;
+          varying vec3 vColor;
+
+          void main() {
+            // Rotation happens on the GPU, keeping thousands of orbits in one POINTS draw call.
+            float angle = aPhase + uTime * aSpeed;
+            float c = cos(angle);
+            float s = sin(angle);
+            vec3 p = position;
+            p.xz = mat2(c, -s, s, c) * p.xz;
+            p.y += sin(uTime * 0.42 + aPhase * 2.0) * 0.09;
+            p *= 1.0 + sin(uTime * 0.55 + aPhase) * 0.018;
+
+            vec4 viewPosition = modelViewMatrix * vec4(p, 1.0);
+            float depth = -viewPosition.z;
+            float farFade = 1.0 - smoothstep(10.0, 22.0, depth);
+            float nearFade = smoothstep(1.0, 3.4, depth);
+            float twinkle = 0.68 + 0.32 * sin(uTime * 1.25 + aPhase * 3.0);
+            vAlpha = farFade * nearFade * twinkle;
+
+            gl_PointSize = clamp(aSize * uPixelRatio * (34.0 / max(depth, 0.1)), 1.0, 18.0);
+            gl_Position = projectionMatrix * viewPosition;
+            vColor = mix(vec3(0.18, 0.82, 1.0), vec3(0.68, 0.3, 1.0), 0.5 + 0.5 * sin(aPhase * 1.7));
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          varying vec3 vColor;
+          void main() {
+            float distanceToCenter = length(gl_PointCoord - 0.5);
+            if (distanceToCenter > 0.5) discard;
+            float core = pow(1.0 - distanceToCenter * 2.0, 2.1);
+            gl_FragColor = vec4(vColor * (1.1 + core * 1.8), core * vAlpha);
+          }
+        `
+      });
+
+      const particles = new THREE.Points(particleGeometry, particleMaterial);
+      particles.frustumCulled = false;
+      scene.add(particles);
+
+      const starCount = 1800;
+      const starPositions = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount; i++) {
+        const radius = 18 + random() * 18;
+        const theta = random() * Math.PI * 2;
+        const phi = Math.acos(random() * 2 - 1);
+        starPositions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+        starPositions[i * 3 + 1] = radius * Math.cos(phi);
+        starPositions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
+      }
+      const starGeometry = new THREE.BufferGeometry();
+      starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+      const starMaterial = new THREE.PointsMaterial({
+        color: 0x9aaeff,
+        size: 0.035,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      scene.add(new THREE.Points(starGeometry, starMaterial));
+
+      const defaults = { yaw: 0.42, pitch: 0.16, radius: 8.1 };
+      const control = { ...defaults, targetYaw: defaults.yaw, targetPitch: defaults.pitch, targetRadius: defaults.radius };
+      let activePointer = null;
+      let previousX = 0;
+      let previousY = 0;
+      let animationId = 0;
+      let previousTime = performance.now();
+      let firstFrame = true;
+      let disposed = false;
+
+      const canvas = renderer.domElement;
+      const clamp = THREE.MathUtils.clamp;
+
+      // Only drag deltas change orientation; raw cursor position never teleports the camera.
+      canvas.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || activePointer !== null) return;
+        activePointer = event.pointerId;
+        previousX = event.clientX;
+        previousY = event.clientY;
+        canvas.setPointerCapture(event.pointerId);
+        document.body.classList.add('is-dragging');
+      });
+
+      canvas.addEventListener('pointermove', (event) => {
+        if (event.pointerId !== activePointer) return;
+        const deltaX = event.clientX - previousX;
+        const deltaY = event.clientY - previousY;
+        previousX = event.clientX;
+        previousY = event.clientY;
+        control.targetYaw -= deltaX * 0.005;
+        control.targetPitch = clamp(control.targetPitch + deltaY * 0.004, -1.05, 1.05);
+      });
+
+      function endDrag(event) {
+        if (event.pointerId !== activePointer) return;
+        activePointer = null;
+        document.body.classList.remove('is-dragging');
+        if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      }
+
+      canvas.addEventListener('pointerup', endDrag);
+      canvas.addEventListener('pointercancel', endDrag);
+      canvas.addEventListener('lostpointercapture', endDrag);
+
+      canvas.addEventListener('wheel', (event) => {
+        event.preventDefault();
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1;
+        control.targetRadius = clamp(control.targetRadius * Math.exp(event.deltaY * unit * 0.001), 4.6, 13.5);
+      }, { passive: false });
+
+      function resetView() {
+        control.targetYaw = defaults.yaw;
+        control.targetPitch = defaults.pitch;
+        control.targetRadius = defaults.radius;
+      }
+
+      resetButton.addEventListener('click', resetView);
+      canvas.addEventListener('keydown', (event) => {
+        const keyStep = 0.12;
+        if (event.key === 'ArrowLeft') control.targetYaw += keyStep;
+        else if (event.key === 'ArrowRight') control.targetYaw -= keyStep;
+        else if (event.key === 'ArrowUp') control.targetPitch = clamp(control.targetPitch - keyStep, -1.05, 1.05);
+        else if (event.key === 'ArrowDown') control.targetPitch = clamp(control.targetPitch + keyStep, -1.05, 1.05);
+        else if (event.key === '+' || event.key === '=') control.targetRadius = clamp(control.targetRadius - 0.5, 4.6, 13.5);
+        else if (event.key === '-') control.targetRadius = clamp(control.targetRadius + 0.5, 4.6, 13.5);
+        else if (event.key === 'Home') resetView();
+        else return;
+        event.preventDefault();
+      });
+
+      function resize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const pixelRatio = Math.min(window.devicePixelRatio, 2);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        // Capping DPR prevents Retina displays from multiplying GPU work by four.
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(width, height, false);
+        composer.setPixelRatio(pixelRatio);
+        composer.setSize(width, height);
+        particleMaterial.uniforms.uPixelRatio.value = pixelRatio;
+      }
+
+      window.addEventListener('resize', resize, { passive: true });
+      resize();
+
+      function updateCamera(delta) {
+        // Exponential damping is frame-rate independent, unlike a fixed per-frame Lerp.
+        const damping = 1 - Math.exp(-8.5 * delta);
+        control.yaw = THREE.MathUtils.lerp(control.yaw, control.targetYaw, damping);
+        control.pitch = THREE.MathUtils.lerp(control.pitch, control.targetPitch, damping);
+        control.radius = THREE.MathUtils.lerp(control.radius, control.targetRadius, damping);
+        const horizontal = Math.cos(control.pitch) * control.radius;
+        camera.position.set(
+          Math.sin(control.yaw) * horizontal,
+          Math.sin(control.pitch) * control.radius,
+          Math.cos(control.yaw) * horizontal
+        );
+        camera.lookAt(0, 0, 0);
+      }
+
+      function animate(now) {
+        if (disposed) return;
+        animationId = requestAnimationFrame(animate);
+        // Gate high-refresh displays at roughly 60fps to avoid unnecessary GPU and battery work.
+        if (now - previousTime < 1000 / 60 - 1) return;
+        const delta = Math.min((now - previousTime) / 1000, 0.05);
+        previousTime = now;
+        heroUniforms.uTime.value += delta;
+
+        hero.rotation.y = heroUniforms.uTime.value * 0.12;
+        hero.rotation.x = Math.sin(heroUniforms.uTime.value * 0.17) * 0.13;
+        orbitLines[0].rotation.y = heroUniforms.uTime.value * 0.035;
+        orbitLines[1].rotation.y = -heroUniforms.uTime.value * 0.022;
+        orbitLines[2].rotation.y = heroUniforms.uTime.value * 0.016;
+        updateCamera(delta);
+        halo.quaternion.copy(camera.quaternion);
+        composer.render(delta);
+
+        if (firstFrame) {
+          firstFrame = false;
+          document.body.classList.add('is-ready');
+          loading.classList.add('is-hidden');
+          window.setTimeout(() => { loading.hidden = true; }, 850);
+        }
+      }
+
+      document.addEventListener('visibilitychange', () => {
+        previousTime = performance.now();
+      });
+
+      canvas.addEventListener('webglcontextlost', (event) => {
+        event.preventDefault();
+        cancelAnimationFrame(animationId);
+        showError('The graphics context was interrupted. Reload the page to resume the scene.');
+      });
+
+      function dispose() {
+        disposed = true;
+        cancelAnimationFrame(animationId);
+        window.removeEventListener('resize', resize);
+        const geometries = new Set();
+        const materials = new Set();
+        scene.traverse((object) => {
+          if (object.geometry) geometries.add(object.geometry);
+          if (object.material) {
+            const list = Array.isArray(object.material) ? object.material : [object.material];
+            list.forEach((material) => materials.add(material));
+          }
+        });
+        geometries.forEach((geometry) => geometry.dispose());
+        materials.forEach((material) => material.dispose());
+        bloom.dispose();
+        composer.dispose();
+        renderer.dispose();
+      }
+
+      window.addEventListener('pagehide', (event) => {
+        if (!event.persisted) dispose();
+      });
+
+      updateCamera(1);
+      animationId = requestAnimationFrame(animate);
+    }
+
+    start().catch((error) => {
+      console.error('Aurora Knot failed to initialize:', error);
+      showError('Please use a modern browser with WebGL enabled and check your internet connection.');
+    });
+  </script>
+</body>
+</html>

@@ -17,7 +17,7 @@
    qwen-3.8-27b-q3, tencent-hy4-flash, gemini-4-hydrogen, qoder-sonus-xhigh,
    minimax-3.1-flash-xhigh, daisyrose-27b-q3, meituan-longcat-2.5,
    inkling-2-mini-xhigh, alibaba-qwen-3.8-27b-high, qwen-3.8-flash-xhigh,
-   and glm-5.4-max were run against the revised text.
+   glm-5.4-max, and qoder-hungerg-max were run against the revised text.
    PROMPT_AURORA_TORUS_WITH_CONTROL was revised the same way. Only
    qwen-3.8-q3-v was run against the revised text.
    ========================================================================= */

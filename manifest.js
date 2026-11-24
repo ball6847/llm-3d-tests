@@ -79,6 +79,10 @@ var BENCH_MANIFEST = {
       "bytes": 17555
     },
     {
+      "slug": "qoder-hungerg-max",
+      "bytes": 31350
+    },
+    {
       "slug": "qoder-qoduck",
       "bytes": 48715
     },

@@ -22,7 +22,7 @@ each owns a folder under `collections/` named after its slug.
 
 | slug | label | folder | models |
 |---|---|---|---|
-| `aurora-torus` | Aurora torus | `collections/aurora-torus/` | 27 |
+| `aurora-torus` | Aurora torus | `collections/aurora-torus/` | 28 |
 | `aurora-torus-with-control` | Aurora torus with control | `collections/aurora-torus-with-control/` | 6 |
 | `llamacpp-expert-cache-viz` | llama.cpp expert cache | `collections/llamacpp-expert-cache-viz/` | 1 |
 
@@ -85,7 +85,8 @@ orbits by dragging instead of following the pointer, and the wheel zooms.
 Only `qwen-3.8-27b-q3`, `tencent-hy4-flash`, `gemini-4-hydrogen`,
 `qoder-sonus-xhigh`, `minimax-3.1-flash-xhigh`, `daisyrose-27b-q3`,
 `meituan-longcat-2.5`, `inkling-2-mini-xhigh`, `alibaba-qwen-3.8-27b-high`,
-`qwen-3.8-flash-xhigh`, and `glm-5.4-max` were run against the revised text.
+`qwen-3.8-flash-xhigh`, `glm-5.4-max`, and `qoder-hungerg-max` were run
+against the revised text.
 
 `qoder-sonus-xhigh` also shipped a control panel, sliders, a geometry
 switcher and keyboard shortcuts that the aurora-torus brief never asked for.
@@ -154,7 +155,7 @@ llm-3d-tests/
     capture-thumbs.mjs   re-capture every thumbnail
   .agents/skills/sync-bench/   the sync skill (SKILL.md)
   collections/
-    aurora-torus/               27 raw model HTML files
+    aurora-torus/               28 raw model HTML files
     aurora-torus-with-control/   6 raw model HTML files
     llamacpp-expert-cache-viz/   1 raw model HTML file
 ```
@@ -168,7 +169,7 @@ edit it by hand; change the files and re-run the sync.
 Real screenshots, not live iframes. Each scene is loaded in headless Chrome
 (Playwright driving the system Chrome), waited for its canvas and loading
 overlay, given a few seconds to settle, and captured at 960x540 to
-`thumbs/<variant>-<model>.png`. All 34 current results have a thumbnail. Cards
+`thumbs/<variant>-<model>.png`. All 35 current results have a thumbnail. Cards
 load these lazily; if a PNG is ever missing, the card falls back to a
 "No preview" tile.
 
